@@ -19,6 +19,10 @@ Entity 2 exposes a REST API so that Entity 1 can remotely inject rules, validate
 
 A dedicated component on Entity 1 that controls the feedback loop. It maintains loop state (current iteration, convergence status), sequences calls to the Rule Agent and Attacker Agent, evaluates termination conditions, and records experiment results. Both agents are stateless — they perform their task and return a result; the Orchestrator decides what happens next.
 
+## Attacker Agent
+
+A stateless LLM agent (built with Agno) running on Entity 3 that simulates attacks against the target (Entity 4). The agent receives the operator's intent, the generated IDS rule, and the rule's SID. It discovers available Attack Skills via Agno's LocalSkills loader, reasons about which skill best matches the intent and rule characteristics, loads the skill's reference documentation, invokes the skill's main.py script with the appropriate arguments, captures the attack traffic as a PCAP, checks whether the IDS fired the rule, and returns the result to the Orchestrator. If the rule does not fire, the agent generates and returns a structured feedback payload (diagnosis, pcap_path, ids_logs) for the Rule Agent to revise the rule.
+
 ## Agent Communication
 
 Agents communicate via REST APIs over HTTP, allowing each entity to run on a separate host. The Rule Agent and Attacker Agent each expose HTTP endpoints. This enables the 4-entity topology to be distributed across machines.
@@ -82,7 +86,9 @@ The system relies entirely on network isolation for security. No authentication 
 
 ## Terms
 
-**Attack Tool Catalog** — A defined registry of attack tools available to the Attacker Agent, organized by attack type (e.g., port scan → `nmap`, flood → `hping3`, exploits → `metasploit`). The LLM selects among catalog entries based on the operator's intent and the generated rule. If the intent cannot be mapped to any catalog entry, the system raises a structured error and halts execution — no tool is invoked with undefined behavior.
+**Attack Skill** — A self-contained package containing instructions (SKILL.md), executable scripts (scripts/main.py), and reference documentation (references/) for simulating a specific class of attacks. Each skill encapsulates one attack type (e.g., reconnaissance, DoS, exploitation) and may use multiple underlying tools (e.g., nmap, hping3, metasploit). The Attacker Agent discovers available skills via Agno's LocalSkills loader, reasons about which skill matches the operator's intent and generated rule, and invokes the skill's main.py script with the appropriate arguments.
+
+**Attack Skill Catalog** — The registry of all available Attack Skills, organized by attack type. Skills are loaded dynamically from the `skills/` directory by the Attacker Agent at startup. If the operator's intent cannot be mapped to any available skill, the system raises a structured error and halts execution — no tool is invoked with undefined behavior.
 
 **SID Manager** — A system component responsible for assigning unique Snort Signature IDs (SIDs) to AI-generated rules. Uses a reserved local range (e.g., 9,000,000–9,999,999) with a persistent counter. The LLM-generated rule's SID is always replaced by the SID Manager before injection. Maintains a persistent mapping of `sid → operator intent` for traceability.
 
@@ -92,6 +98,6 @@ The system relies entirely on network isolation for security. No authentication 
 
 **IDS Monitor** — An abstraction layer that the Attacker Agent uses to check whether the IDS fired a rule during a simulated attack. The initial implementation reads the IDS alert log file and checks for an alert matching the injected rule's `sid`. The log file path is a configurable parameter, allowing the same implementation to monitor different IDS backends by pointing to their respective log files (e.g., `/var/log/snort/alert` for Snort, or a Suricata EVE JSON file).
 
-**Attack Tool** — An external executable (e.g., `nmap`, `hping3`, `metasploit`) invoked by the Attacker Agent to generate realistic attack traffic against the Target. The system must support multiple tools, since different attack types require different tools. The Attacker Agent selects the appropriate tool based on the attack being simulated.
+**Attack Tool** — An external executable (e.g., `nmap`, `hping3`, `metasploit`) invoked internally by an Attack Skill to generate realistic attack traffic against the Target. Each Attack Skill may use one or more tools internally; tool selection is encapsulated within the skill's scripts.
 
-**Attack Simulation** — The act of invoking one or more Attack Tools to generate traffic with the characteristics described in the operator's intent, in order to test whether the IDS rule fires correctly.
+**Attack Simulation** — The act of executing an Attack Skill, which invokes one or more Attack Tools internally to generate traffic with the characteristics described in the operator's intent, in order to test whether the IDS rule fires correctly.

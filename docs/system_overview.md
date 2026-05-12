@@ -40,7 +40,7 @@ Controla o loop de feedback. Mantém o estado do experimento (iteração atual, 
 Recebe a intenção do operador em linguagem natural e produz uma regra de IDS válida. Em cada iteração subsequente, recebe o payload de feedback do Agente Atacante e revisa a regra. Antes da injeção, delega a validação ao **IDS Rule Validator** e a escrita ao **IDS Rule Injector**.
 
 ### Agente Atacante (Entidade 3)
-Recebe a intenção do operador e a regra gerada. Seleciona a ferramenta de ataque adequada a partir do **Catálogo de Ferramentas**, executa o ataque contra a Entidade 4, captura o tráfego gerado (PCAP), consulta o **IDS Monitor** para verificar se a regra disparou e retorna o resultado ao Orquestrador. Se a regra não disparar, gera e retorna o payload de feedback.
+Recebe a intenção do operador e a regra gerada. Descobre as **Skills de Ataque** disponíveis via Agno, raciocina sobre qual skill é mais apropriada baseado na intenção e na regra, carrega a documentação de referência da skill, invoca o script `main.py` da skill com os argumentos apropriados, captura o tráfego gerado (PCAP), consulta o **IDS Monitor** para verificar se a regra disparou e retorna o resultado ao Orquestrador. Se a regra não disparar, gera e retorna o payload de feedback.
 
 ### IDS Rule Validator (Entidade 1 → Entidade 2)
 Abstração que valida a sintaxe de uma regra gerada antes da injeção. A implementação inicial invoca `snort -T` via a API da Entidade 2. Se a validação falhar, o erro é devolvido ao Agente de Regras como feedback. A abstração permite plugar validadores de outros IDS (ex: `suricata --test-config`).
@@ -54,8 +54,8 @@ Abstração que verifica se o IDS disparou uma regra durante uma janela de ataqu
 ### SID Manager (Entidade 1)
 Atribui SIDs únicos às regras geradas por IA dentro de um range reservado (ex: 9.000.000–9.999.999), usando um contador persistente. O LLM nunca é responsável por garantir unicidade de SIDs — o SID gerado pelo modelo é sempre substituído antes da injeção. Mantém um mapeamento persistente de `sid → intenção do operador` para rastreabilidade.
 
-### Catálogo de Ferramentas (Entidade 3)
-Registro das ferramentas de ataque disponíveis, organizadas por tipo de ataque (ex: port scan → `nmap`, flood → `hping3`, exploits → `metasploit`). O Agente Atacante seleciona entre as entradas do catálogo com base na intenção. Se a intenção não mapear para nenhuma entrada, o sistema levanta um erro estruturado e interrompe a execução sem invocar nenhuma ferramenta.
+### Catálogo de Skills de Ataque (Entidade 3)
+Registro das skills de ataque disponíveis, organizadas por tipo de ataque (ex: reconnaissance, DoS, exploitation). Cada skill é um pacote auto-contido com documentação (SKILL.md), scripts executáveis (scripts/main.py) e referências (references/). O Agente Atacante descobre as skills disponíveis via Agno, raciocina sobre qual é mais apropriada baseado na intenção do operador e na regra gerada, e invoca a skill. Se a intenção não mapear para nenhuma skill disponível, o sistema levanta um erro estruturado e interrompe a execução sem invocar nenhuma ferramenta.
 
 # LOOP DE FEEDBACK
 
@@ -120,7 +120,6 @@ O operador submete experimentos via `POST /experiments` à API REST do Orquestra
 {
   "intent": "Bloquear tráfego com características ABC",
   "max_iterations": 5,
-  "allowed_tools": ["nmap", "hping3"],
   "variant_count": 3
 }
 ```
@@ -129,7 +128,6 @@ O operador submete experimentos via `POST /experiments` à API REST do Orquestra
 |---|---|---|
 | `intent` | Sim | Intenção em linguagem natural |
 | `max_iterations` | Não | Número máximo de iterações (usa o padrão global se omitido) |
-| `allowed_tools` | Não | Subconjunto do catálogo de ferramentas permitidas para este experimento |
 | `variant_count` | Não | Quantas variantes do ataque testar na fase de robustez |
 
 # PERSISTÊNCIA

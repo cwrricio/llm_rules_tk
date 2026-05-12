@@ -15,8 +15,8 @@ A multi-agent system that accepts a natural-language security intent from the op
 3. As a network operator, I want the system to automatically generate a syntactically valid IDS rule from my intent, so that invalid rules never reach the IDS.
 4. As a network operator, I want the generated rule to receive a unique SID automatically, so that it never conflicts with existing rules in the IDS.
 5. As a network operator, I want the generated rule to be injected into the IDS without restarting it, so that the testbed can iterate quickly.
-6. As a network operator, I want the system to automatically simulate an attack that matches my stated intent, so that the rule is tested under realistic conditions.
-7. As a network operator, I want to restrict which attack tools are used in a given experiment, so that I can control the scope and risk of the simulation.
+6. As a network operator, I want the Attacker Agent to automatically select and invoke the appropriate attack skill based on my stated intent, so that the rule is tested under realistic conditions without manual tool selection.
+7. As a network operator, I want to restrict which attack skills are available in a given experiment, so that I can control the scope and risk of the simulation.
 8. As a network operator, I want the attack traffic to be captured as a PCAP, so that I can inspect exactly what was sent during each test.
 9. As a network operator, I want the system to test the rule against multiple attack variants after initial detection, so that I know the rule is not fragile against minor parameter changes.
 10. As a network operator, I want to configure how many attack variants are tested per iteration, so that I can trade off thoroughness against experiment duration.
@@ -24,7 +24,7 @@ A multi-agent system that accepts a natural-language security intent from the op
 12. As a network operator, I want the feedback sent to the rule agent to include a natural-language diagnosis, the raw PCAP, and the IDS logs, so that the agent has all the evidence needed to revise the rule correctly.
 13. As a network operator, I want the loop to stop after a configurable maximum number of iterations if no convergence is reached, so that the experiment always terminates.
 14. As a network operator, I want to know whether the experiment converged or failed, so that I can assess whether my intent was achievable within the given constraints.
-15. As a network operator, I want the system to raise a structured error if my intent cannot be mapped to any available attack tool, so that the experiment fails clearly rather than executing undefined behavior.
+15. As a network operator, I want the system to raise a structured error if my intent cannot be mapped to any available attack skill, so that the experiment fails clearly rather than executing undefined behavior.
 16. As a network operator, I want to configure the IDS backend via a parameter (e.g., log file path), so that I can use the system with Snort or Suricata without modifying the codebase.
 17. As a researcher, I want all four metrics (detection rate, precision+recall, iterations to convergence, structural quality) recorded for every iteration of every experiment, so that I can analyze both research axes independently.
 18. As a researcher, I want the complete generated rule stored for each iteration, so that I can trace how the rule evolved across the feedback loop.
@@ -56,8 +56,8 @@ The system is distributed across three application entities:
 
 **Entity 3 — Attacker Application**
 
-- **Attacker Agent** — Stateless LLM agent (built with Agno). Receives the operator's intent and the generated rule, queries the Attack Tool Catalog to select an appropriate tool, invokes the PCAP Capture module before executing the attack, checks the IDS Monitor after execution, and returns the result or feedback payload to the Orchestrator.
-- **Attack Tool Catalog** — A static registry mapping attack types to available tools (e.g., port scan → `nmap`, flood → `hping3`, exploits → `metasploit`). The LLM selects among catalog entries. If the intent cannot be mapped to any entry, the catalog raises a structured `UnmappedIntentError` — no tool is invoked.
+- **Attacker Agent** — Stateless LLM agent (built with Agno). Receives the operator's intent and the generated rule, discovers available Attack Skills via Agno's LocalSkills loader, reasons about which skill best matches the intent and rule, loads the skill's reference documentation, invokes the skill's main.py script with the appropriate arguments, checks the IDS Monitor after execution, and returns the result or feedback payload to the Orchestrator.
+- **Attack Skill Catalog** — A collection of self-contained Attack Skills (each organized as a directory with SKILL.md, scripts/, and references/), loaded dynamically by the Attacker Agent via Agno's LocalSkills loader. Each skill encapsulates one attack type (e.g., reconnaissance, DoS, exploitation) and may use multiple underlying tools internally. If the operator's intent cannot be mapped to any available skill, the agent raises a structured error and halts execution — no tool is invoked.
 - **PCAP Capture** — Starts a `tcpdump` capture before the attack and stops it after, producing a PCAP file. Requires network capture privileges on Entity 3. Returns the PCAP file path.
 - **Attacker REST API** — Exposes `POST /attacks` (execute attack, returns result or feedback payload). Built with FastAPI.
 
@@ -65,7 +65,7 @@ The system is distributed across three application entities:
 
 **POST /experiments (Orchestrator API)**
 ```
-Request:  { intent: str, max_iterations?: int, allowed_tools?: list[str], variant_count?: int }
+Request:  { intent: str, max_iterations?: int, variant_count?: int }
 Response: { experiment_id: str }
 ```
 
@@ -76,7 +76,7 @@ Response: { status: "running" | "converged" | "failed", result?: ExperimentRecor
 
 **POST /attacks (Attacker API)**
 ```
-Request:  { intent: str, rule: str, sid: int, variant_count: int, allowed_tools?: list[str] }
+Request:  { intent: str, rule: str, sid: int, variant_count: int }
 Response: { fired: bool, feedback?: { diagnosis: str, pcap_path: str, ids_logs: str } }
 ```
 
@@ -114,7 +114,7 @@ The following deep modules will have unit/integration tests. All are testable wi
 | Module | What to test |
 |---|---|
 | **SID Manager** | Counter increments correctly; SID always falls within 9,000,000–9,999,999; LLM-supplied SID is always overwritten; `sid → intent` mapping persists across process restarts; concurrent calls do not produce duplicate SIDs |
-| **Attack Tool Catalog** | Intent maps to the correct tool; `allowed_tools` filter restricts selection; unmapped intent raises `UnmappedIntentError` without invoking any executable; catalog entries are validated at startup |
+| **Attack Skills** | Skills are discoverable via LocalSkills loader; skill's main.py script executes with correct arguments in the documented order; unmapped intent raises structured error without invoking any executable; skill directory structure (SKILL.md, scripts/, references/) is validated at startup |
 | **IDS Rule Validator** | Valid rule returns `valid=True`; invalid rule returns `valid=False` with non-empty error string; the Snort implementation passes the rule to the IDS Management API correctly |
 | **IDS Rule Injector** | Rule is written to the dedicated file with the correct SID; the IDS Management API is called to trigger a reload; a second injection for the same experiment overwrites the previous rule |
 | **IDS Monitor** | Returns `fired=True` when the alert log contains an entry matching the target SID; returns `fired=False` when the log is empty or contains only other SIDs; configurable log path is honored |
