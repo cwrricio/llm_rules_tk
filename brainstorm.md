@@ -1585,3 +1585,592 @@ Acho que é melhor seguirmos a seguinte abordagem com duas issues:
 Lembrando que tudo deve ser HITL.
      
 <!-------------->
+
+/grill-with-docs tenho algumas pendências a ver, estão em @pending_issues.md, vamos então refatorar o @docs/PRD.md. responda em português
+
+<!-------------->
+
+Tenho o contexto completo. Vou começar pela questão mais bloqueante — a que tem mais dependências downstream.
+
+  ---
+  Questão 1 — Geração de variantes (Issue 2.1)
+
+  O AttackPlan atual no CONTEXT.md é:
+
+  class AttackPlan(BaseModel):
+      catalog_entry_id: str
+      slots: dict[str, str]
+      evasion_rationale: str
+
+  Para suportar variant_count=3, há duas opções:
+
+  A — LLM gera todas as variantes de uma vez, antes da execução. O schema vira:
+  class AttackPlan(BaseModel):
+      catalog_entry_id: str
+      slots: dict[str, str]
+      evasion_rationale: str
+      variants: list[VariantPlan]  # geradas junto com o plano base
+
+  B — Determinístico: o catálogo declara quais slots são "dimensões de variação" (ex: port tem range 1–65535), e o código gera N combinações
+  automaticamente, sem chamar o LLM de novo.
+
+  Minha recomendação: A (LLM gera as variantes), porque a evasão informada pela regra é o core do sistema — o LLM lê a regra e raciocina sobre quais
+  variações de parâmetro têm chance de evadir. Geração determinística produz variantes cegas (não usa o conhecimento da regra), o que contradiz o
+  evasion_rationale e a "Attacker Strategy" documentada no CONTEXT.md.
+
+  Qual das duas opções você escolhe — e por quê?
+
+<!-------------->
+
+Gosto da A, mas com algumas ressalvas. A geração de variantes pelo LLM é interessante porque pode levar em conta o raciocínio sobre a regra e a evasão, mas não deve ser gerada uma única vez no início do experimento. O ideal seria gerar uma variante a cada iteração, com base no feedback da iteração anterior (se a variante anterior falhou ou acertou, o LLM pode gerar uma nova com base no que aprendeu).
+
+<!-------------->
+
+Questão 2 — Sequência de execução de variantes (Issue 2.2)
+
+  Com a decisão acima — variantes geradas uma a uma, com histórico — o Orchestrator precisa chamar o Attacker Agent múltiplas vezes por iteração principal:
+
+  - 1 chamada para o ataque base
+  - Se o base dispara: N chamadas para variantes (uma por vez, com histórico crescente)
+  - Se qualquer variante evade: loop encerra a fase de ataque, feedback vai ao Rule Agent
+
+  Isso significa que POST /attacks é chamado até N+1 vezes por iteração do loop principal. O input da chamada de variante precisa incluir o histórico das variantes anteriores (quais slots foram usados, quais dispararam, quais evadiram).
+
+  Consequência direta no schema do POST /attacks:
+
+  # Request atual (PRD)
+  { intent: str, rule: str, sid: int, variant_count: int }
+
+  # Request revisado para suportar variantes com histórico
+  {
+    intent: str,
+    rule: str,
+    sid: int,
+    variant_history: list[VariantResult]  # vazio na chamada base; cresce a cada variante
+  }
+
+  Onde VariantResult seria algo como { slots: dict, fired: bool }.
+
+  Minha recomendação: manter variant_count fora do request de /attacks e deixá-lo como parâmetro do Orchestrator — ele controla quantas vezes chama, não o Attacker Agent. O Attacker Agent só precisa saber: qual é o plano base, o histórico de variantes anteriores, e a regra.
+
+  Você concorda com essa separação de responsabilidades? E qual é o limite de variant_history que o Attacker Agent recebe — só os da iteração atual, ou o histórico completo de todas as iterações?
+
+<!-------------->
+
+Eu concordo com a separação de responsabilidades. O Orchestrator é quem controla o fluxo e a quantidade de variantes, enquanto o Attacker Agent é responsável por executar o plano base e as variantes com base no histórico fornecido. variant_history é passado como um parâmetro para o Attacker Agent, e ele deve receber o histórico completo de todas as variantes anteriores, para que possa raciocinar sobre o que já foi tentado e ajustar suas próximas ações de acordo.
+
+<!-------------->
+
+Questão 3 — Critério de convergência de variantes (Issue 4.2)
+
+  Com variantes geradas incrementalmente, o critério de convergência precisa ser preciso. Duas opções:
+
+  A — 100% obrigatório: a iteração só converge se o ataque base e todas as N variantes dispararem. Se qualquer variante evade, vai feedback ao Rule Agent. variant_count funciona como taxa mínima implícita de 1.0.
+
+  B — Threshold configurável: min_variant_detection_rate: float (ex: 0.67 = 2 de 3 variantes). Convergência parcial é registrada mas não encerra o experimento.
+
+  Minha recomendação: A (100% obrigatório), pois o objetivo da fase de evasão é encontrar o pior caso — uma única variante que evade é evidência de que a regra tem uma lacuna. Threshold configurável adiciona complexidade sem benefício claro para pesquisa: o que significaria convergência com 67%? Essa ambiguidade contamina as métricas.
+
+  Nota: se a opção A for adotada, o Orchestrator para de chamar variantes assim que a primeira evasão é encontrada — não precisa testar as demais na mesma iteração. Isso é comportamento correto ou você quer continuar testando as outras variantes mesmo após uma evasão?
+
+<!-------------->
+
+A ideia do ataque evadir é justamente para que o Rule Agent receba feedback sobre a falha da regra. Se uma variante evadiu, não faz sentido continuar testando as outras variantes, pois o objetivo é justamente identificar que a regra falhou em proteger contra aquela variação específica do ataque. Portanto, o comportamento correto seria parar de chamar variantes assim que a primeira evasão é encontrada e enviar o feedback ao Rule Agent. O objetivo principal **é refinar a(s) regra(s) até que nem mesmo o agente atacante consiga mais evadir**.
+
+<!-------------->
+
+ Questão 4 — PCAP binário não é legível por LLM (Issue 2.3)
+
+  O FeedbackPayload atual passa pcap_path: str ao Rule Agent. Mas o Rule Agent é um LLM — ele não consegue interpretar um PCAP binário diretamente. Alguém precisa converter antes de passar.
+
+  Três opções:
+
+  A — Attacker Agent converte antes de retornar: o main.py da skill já roda tshark -r capture.pcap -T json internamente e devolve o JSON no stdout. O FeedbackPayload passa pcap_summary: str (texto legível) em vez de path.
+
+  B — Orchestrator converte ao montar o feedback: o Orchestrator recebe o path, roda tshark, e injeta o resultado no payload antes de chamar o Rule Agent.
+
+  C — Rule Agent recebe o path, tool do Agno lê e converte: o Rule Agent tem uma ferramenta Agno que lê e converte o PCAP quando necessário.
+
+  Minha recomendação: A, porque mantém a responsabilidade dentro da skill que gerou o PCAP. A skill já sabe qual ferramenta usou e quais campos são relevantes — ela está na melhor posição para resumir o tráfego. O Orchestrator não deveria depender de tshark. E adicionar uma tool ao Rule Agent para ler PCAP aumenta a superfície de erro sem necessidade.
+
+  Consequência: FeedbackPayload.pcap_path vira pcap_summary: str (texto do tshark ou tcpdump -r -nn), e o path raw do PCAP ainda é salvo no ExperimentRecord separadamente (para Wireshark). Você concorda?
+
+<!-------------->
+
+Eu concordo com sua decisão.
+
+<!-------------->
+
+Questão 5 — evasion_rationale vai ao Rule Agent? (Issue 2.5)
+
+  O AttackPlan inclui evasion_rationale — o raciocínio do Attacker Agent sobre por que aqueles slots desafiam a regra. Esse campo é gerado antes da execução, como intenção declarada.
+
+  Se a variante evade (regra não dispara), o Rule Agent precisa saber não só o que passou, mas por que o atacante achou que passaria. Duas opções:
+
+  A — Incluir evasion_rationale no FeedbackPayload: o Rule Agent recebe pcap_summary + ids_logs + evasion_rationale. Isso dá ao Rule Agent o raciocínio adversarial explícito — ele sabe qual lacuna da regra o atacante explorou intencionalmente.
+
+  B — evasion_rationale é só observabilidade: fica no Experiment Record, mas não é passado ao Rule Agent. O Rule Agent infere a lacuna a partir do pcap_summary e ids_logs apenas.
+
+  Minha recomendação: A, porque evasion_rationale é exatamente o diagnóstico que o Rule Agent precisa. O pcap_summary mostra o que aconteceu; o evasion_rationale explica qual propriedade da regra foi explorada. Passar os dois é como dar ao Rule Agent tanto a evidência quanto a hipótese do atacante — informação complementar, não redundante.
+
+  Você concorda em incluir evasion_rationale no FeedbackPayload?
+
+<!-------------->
+
+Eu concordo com sua decisão.
+
+<!-------------->
+
+Questão 6 — Regras acumuladas entre iterações (Issue 5.2)
+
+  O arquivo ai_generated.rules persiste entre iterações do loop. Se a regra da iteração 1 ainda estiver no arquivo quando o ataque da iteração 2 for executado, um alerta com o SID da iteração 1 pode ser gerado — e o IDS Monitor, filtrando por SID da iteração 2, não o vê. Isso é silencioso e correto.
+
+  Mas há um cenário pior: se uma regra antiga tiver SID diferente e for muito ampla, ela pode gerar ruído nos logs. E entre experimentos distintos: regras do experimento A permanecem quando o experimento B começa.
+
+  Duas opções:
+
+  A — Arquivo contém apenas a regra da iteração atual: o IDS Rule Injector sobrescreve (não append) ai_generated.rules a cada injeção. Cada iteração começa com exatamente uma regra ativa.
+
+  B — Arquivo acumula regras: o injector faz append. O IDS Monitor filtra por SID específico, então regras antigas não interferem na detecção. Mas PCAPs e logs ficam mais ruidosos.
+
+  Minha recomendação: A (sobrescrever), por duas razões: (1) simplicidade — uma regra ativa por vez elimina toda ambiguidade; (2) corretude — o IDS Monitor filtra por SID, mas ids_logs passado ao Rule Agent mostraria alertas de SIDs antigos, confundindo o diagnóstico.
+
+  Você concorda com sobrescrever o arquivo a cada injeção?
+
+<!-------------->
+
+A primeira iteração começa com o arquivo vazio, assim a(s) primeira(s) regra(s) é(ão) injetada(s) normalmente. Se uma variante do ataque consegue evadir, uma nova versão dessa(s) regra(s) é(ão) gerada(s) e injetada(s) na próxima iteração, podendo ser a mesma regra com ajustes ou uma regra completamente nova, dependendo do feedback.
+
+<!-------------->
+
+Questão 7 — Uma regra ou múltiplas regras por iteração?
+
+  O RuleAgentOutput atual é:
+
+  class RuleAgentOutput(BaseModel):
+      rule: str  # uma única regra Snort completa
+
+  Em determinados cenários de evasão, uma única regra pode ser insuficiente — por exemplo, para cobrir ao mesmo tempo tráfego XRCE-DDS por UDP e por TCP. O Rule Agent poderia precisar gerar duas regras complementares.
+
+  Duas opções:
+
+  A — Sempre uma regra por iteração: rule: str permanece. Se o LLM precisar cobrir dois vetores, ele usa opções Snort mais abrangentes (ex: content com lógica OR, ou uma regra mais genérica). A complexidade fica dentro da sintaxe Snort, não no schema.
+
+  B — Múltiplas regras permitidas: rules: list[str]. O IDS Rule Injector escreve todas no arquivo. O SID Manager atribui SIDs distintos. O IDS Monitor verifica se alguma das SIDs disparou.
+
+  Minha recomendação: A (uma regra), pelas seguintes razões: (1) o objetivo de pesquisa é avaliar a qualidade de uma única regra gerada por LLM — múltiplas regras complicam a métrica de "structural quality"; (2) as métricas de convergência ficam mais claras com uma unidade atômica; (3) Snort tem opções suficientes (múltiplos content, pcre, threshold) para cobrir variações dentro de uma regra.
+
+  Você confirma que o escopo é sempre uma única regra por iteração?
+
+<!-------------->
+
+Me ajude com uma questão: você não acha que podem ter ataques que exijam múltiplas regras para serem mitigados?
+
+<!-------------->
+
+Sim, você tem razão — e é uma objeção legítima. Deixa eu ser honesto sobre os dois lados:
+
+  Casos onde múltiplas regras fazem sentido:
+  - xrce-dds-entity-flood pode ocorrer sobre UDP e TCP — uma regra por protocolo
+  - mqtt-publisher-flood pode explorar conexões autenticadas e anônimas — padrões de payload distintos
+  - Ataques de fragmentação têm assinaturas diferentes no primeiro fragmento vs. no pacote reassemblado
+
+  O custo real de permitir múltiplas regras:
+  - RuleAgentOutput.rule: str vira rules: list[str]
+  - SID Manager atribui SIDs distintos a cada uma
+  - IDS Monitor verifica se qualquer SID do conjunto disparou
+  - Métrica de "structural quality" precisa avaliar N regras, não 1
+
+  Mas há uma alternativa que evita essa complexidade: escopo das entradas do catálogo. Se cada entrada do catálogo for definida com granularidade suficiente para ser endereçada por uma única regra (ex: xrce-dds-entity-flood-udp e xrce-dds-entity-flood-tcp como entradas separadas), o Rule Agent sempre gera uma regra por intent específico.
+
+  A pergunta real então é: o operador submete um intent genérico ("detecte entity floods XRCE-DDS") e o sistema resolve a multiplicidade internamente — ou o operador já especifica o vetor exato ("detecte entity floods XRCE-DDS sobre UDP"), deixando uma regra suficiente?
+
+  Qual desses modelos reflete melhor o caso de uso real do operador?
+
+<!-------------->
+
+O operador provavelmente submeteria um intent genérico, esperando que o sistema gerasse a regra adequada para cobrir o vetor específico.
+
+<!-------------->
+
+Questão 8 — Janela de tempo pós-injeção (Issue 5.1)
+
+  Após o IDS Rule Injector sinalizar o reload do Snort, há uma janela onde o Snort ainda está processando o novo arquivo de regras. Se o Attacker Agent iniciar o ataque antes do reload completar, o resultado é um falso negativo silencioso — a regra estava injetada mas o Snort ainda não a estava aplicando.
+
+  Duas opções:
+
+  A — Sleep fixo configurável: wait_after_reload_seconds: 2 no config.yaml. Simples, mas cego — não sabe se o Snort realmente terminou.
+
+  B — Health check ativo: a IDS Management API expõe GET /health que verifica se o Snort está rodando e com o arquivo de regras atual carregado. O Orchestrator faz polling até receber ok antes de autorizar o ataque.
+
+  Minha recomendação: A com fallback documentado. Um GET /health real contra Snort é difícil de implementar corretamente (Snort não expõe endpoint de status de reload). Na prática, o tempo de reload do Snort com um único arquivo de regra pequeno é determinístico e muito curto (< 1s). Um wait_after_reload_seconds: 2 com valor configurável é simples, testável, e suficiente para o contexto de pesquisa. Se a latência de reload se mostrar problemática em testes, o valor pode ser aumentado.
+
+  Você prefere o sleep fixo ou quer investir no health check?
+
+<!-------------->
+
+Eu prefiro um health check ativo, pois o IDS está rodando em um container docker. Na prática, o fluxo atual é: regra adicionada no arquivo de regras → container é reiniciado (``docker restart snort_ids``) → (output "snort_ids", demonstrando que o container terminou de restartar) → se as regras são válidas, IDS rodando, se não, ver ``docker logs`` para saber o porquê. O health check pode verificar se o container está rodando e se a regra foi carregada, garantindo que o ataque só comece quando o ambiente estiver pronto.
+
+<!-------------->
+
+Questão 9 — MQTT: CLI ou Docker? (Issue 1.2)
+
+  O CONTEXT.md já define que XRCE-DDS usa Docker e MQTT usa CLI (mosquitto_pub). A questão pendente é: mosquitto_pub e mosquitto_sub estão disponíveis na Entidade 3, ou os ataques MQTT também precisam ser empacotados em Docker?
+
+  Isso é factual — você tem controle sobre o ambiente da Entidade 3. Qual é o status real?
+
+  A — mosquitto-clients instalado na Entidade 3: CLI funciona diretamente, sem Docker. Mantém o modelo atual do catálogo.
+
+  B — Entidade 3 não tem mosquitto_pub: os ataques MQTT também precisam de containers Docker, igualando os dois modelos de invocação.
+
+  Se for B, o catálogo fica mais uniforme (tudo Docker), o que simplifica o código do Attacker Agent — ele não precisaria lidar com dois modelos de invocação distintos. Mas adiciona a complexidade de criar imagens Docker para ferramentas que seriam triviais via CLI.
+
+  Qual é a situação real da Entidade 3?
+
+<!-------------->
+
+Entidade 3 tem containers docker pré-configurados para os ataques XRCE e MQTT. Portanto, ambos os tipos de ataque (XRCE-DDS e MQTT) serão empacotados em Docker. Isso mantém a uniformidade no modelo de invocação pelo Attacker Agent, que pode simplesmente executar o container correspondente para cada skill, sem se preocupar com a disponibilidade de ferramentas na Entidade 3.
+
+<!-------------->
+
+Questão 10 — Filtro allowed_tools (Issue 1.4)
+
+  O PRD menciona que POST /experiments pode receber allowed_tools para restringir quais skills o Attacker Agent pode usar (User Story 7). O contrato atual do request é:
+
+  { intent: str, max_iterations?: int, variant_count?: int }
+
+  O filtro precisa ser adicionado. A questão é: o operador filtra por catalog_entry_id (ex: "xrce-dds-entity-flood") ou por algum outro identificador?
+
+  Minha recomendação: allowed_catalog_entries: list[str] | null — lista de catalog_entry_id permitidos. null = sem restrição (padrão). O Attacker Agent recebe essa lista no POST /attacks e o sistema rejeita qualquer AttackPlan que referencie uma entrada fora da lista, antes de executar qualquer coisa.
+
+  POST /experiments
+  { intent: str, max_iterations?: int, variant_count?: int, allowed_catalog_entries?: list[str] }
+
+  POST /attacks
+  { intent: str, rule: str, sid: int, variant_history: list[VariantResult], allowed_catalog_entries: list[str] }
+
+  Você concorda com filtrar por catalog_entry_id? E o filtro deve ser aplicado apenas no momento da seleção (o Attacker Agent não vê as entradas bloqueadas) ou após a seleção (o sistema rejeita se o LLM escolheu uma entrada bloqueada)?
+
+<!-------------->
+
+De momento, o agente deve se ater ao catálogo de ataques disponível (inicialmente, 10 ataques -> containers docker pré-configurados, com ataques de protocolos MQTT e XRCE-DDS). O filtro allowed_catalog_entries pode ser implementado posteriormente, caso seja necessário restringir ainda mais os ataques disponíveis para o agente. Por enquanto, o foco deve ser em garantir que o agente possa acessar e utilizar o catálogo completo de ataques pré-configurados.
+
+<!-------------->
+
+Questão 11 — Estado do Orchestrator em caso de crash (Issue 4.4)
+
+  O Orchestrator mantém o estado do loop em memória: iteração atual, regras geradas, resultados parciais. Se o processo morrer no meio de um experimento (crash, OOM, restart), o experiment_id já foi retornado ao operador via POST /experiments — mas o estado se perde.
+
+  Duas opções:
+
+  A — Estado apenas em memória: se o Orchestrator morrer, o experimento é perdido. O operador precisa submeter novamente. GET /experiments/{id} retorna 404 para IDs de experimentos que não estão mais em memória.
+
+  B — Estado persistido em disco: a cada iteração, o Orchestrator serializa o estado atual para results/{experiment_id}/state.json. Na inicialização, o Orchestrator pode detectar experimentos interrompidos.
+
+  Minha recomendação: A (memória apenas), pelos seguintes motivos: (1) o contexto é pesquisa em ambiente controlado — crashes são raros e resubmeter é barato; (2) persistência de estado introduz lógica de recuperação (o que fazer se o estado foi persistido mas o Snort está em estado diferente?); (3) o Experiment Recorder já grava o resultado completo ao final — isso é suficiente para análise. Persistência incremental de estado é complexidade de produção, não de pesquisa.
+
+  Você aceita estado apenas em memória — experimento perdido em caso de crash?
+
+<!-------------->
+
+Sim.
+
+<!-------------->
+
+Questão 12 — SID Manager corrompido (Issue 4.3)
+
+  O sid_counter.json é o estado persistente do SID Manager. Se o arquivo estiver ausente ou corrompido na inicialização do sistema, há três comportamentos possíveis:
+
+  A — Recria do zero (SID = 9.000.000): simples, mas arriscado se já existirem regras com SIDs do sistema nessa faixa — geraria SIDs duplicados.
+
+  B — Falha com SIDCounterCorruptedError: o sistema para e exige intervenção manual. Seguro, mas requer que o operador saiba o que fazer.
+
+  C — Inspeciona ai_generated.rules para inferir o maior SID em uso: o SID Manager lê o arquivo de regras, extrai os SIDs existentes, e continua a partir do maior + 1. Robusto, mas adiciona complexidade de parsing.
+
+  Minha recomendação: B (falha explícita), com uma mensagem clara: "sid_counter.json missing or corrupted. To reset safely, delete ai_generated.rules and recreate sid_counter.json with {\"counter\": 9000000}." Isso é seguro (sem risco de SID duplicado), e a recuperação manual é trivial no contexto de pesquisa. A opção C é over-engineering para um arquivo que raramente corrompe.
+
+  Você prefere falha explícita ou recriação automática?
+
+<!-------------->
+
+Concordo com sua recomendação de falha explícita, pois é mais seguro e evita o risco de gerar SIDs duplicados. A mensagem de erro clara orientando o operador sobre como recuperar o estado é uma boa prática para garantir que a intervenção manual seja fácil e rápida.
+
+<!-------------->
+
+Questão 13 — GET /experiments/{id} durante execução (Issue 3.3)
+
+  Enquanto o experimento roda, o que GET /experiments/{id} retorna além de status: "running"?
+
+  A — Só o status: { "status": "running" }. O operador espera o resultado final.
+
+  B — Status + progresso parcial: { "status": "running", "current_iteration": 2, "rules_so_far": [...] }. O operador pode acompanhar o progresso em tempo real.
+
+  Minha recomendação: A (só status), porque: (1) o estado está em memória e expor progresso parcial seria serializar estado interno pelo endpoint público — acoplamento desnecessário; (2) no contexto de pesquisa, o operador está interessado no resultado final, não no progresso passo a passo; (3) simplifica o código do Orchestrator.
+
+  Progresso parcial ou só status?
+
+<!-------------->
+
+Apenas status. O operador pode acompanhar o progresso através dos logs do Orchestrator, mas o endpoint GET /experiments/{id} retorna apenas o status final do experimento, seja "running", "converged", ou "failed". Isso mantém a simplicidade do endpoint e evita a necessidade de expor detalhes internos do estado do Orchestrator.
+
+<!-------------->
+
+Questão 14 — Diagnóstico do Rule Agent (Issue 3.1)
+
+  O Rule Agent raciocina sobre por que a regra falhou antes de gerar a versão revisada. Esse raciocínio fica no chain-of-thought do LLM — atualmente não é capturado no RuleAgentOutput.
+
+  A — Não capturar: o diagnóstico é interno ao LLM. O Experiment Record tem as regras e os feedback payloads — suficiente para análise post-hoc.
+
+  B — Capturar como campo opcional: RuleAgentOutput vira:
+  class RuleAgentOutput(BaseModel):
+      rules: list[str]
+      diagnosis: str | None  # Rule Agent's stated reason for the revision
+  O diagnóstico aparece no Experiment Record junto com a regra de cada iteração.
+
+  Minha recomendação: B, pelo objetivo de pesquisa. Um dos eixos de pesquisa é "Rule Translation Quality" — entender como o Rule Agent raciocina sobre evasões é dado valioso para o paper. Capturar o diagnóstico custa zero em complexidade de implementação (é um campo a mais no schema) e enriquece significativamente o Experiment Record para análise qualitativa.
+
+  Você quer capturar o diagnóstico do Rule Agent no output?
+
+<!-------------->
+
+Sim, acho que é uma boa ideia capturar o diagnóstico do Rule Agent no output.
+
+<!-------------->
+
+Questão 15 — Formato e estrutura dos arquivos de resultado (Issue 3.2)
+
+  O results_output_dir: ./results já está no config. Falta definir a estrutura interna. Minha proposta:
+
+  results/
+  └── {experiment_id}/
+      ├── experiment.json     # registro completo: todas as iterações, regras, feedback payloads, diagnósticos
+      ├── metrics.csv         # uma linha por iteração: detection_rate, iterations, structural_quality
+      └── pcaps/
+          ├── iter1_base.pcap
+          ├── iter1_variant1.pcap
+          └── ...
+
+  - experiment_id é um UUID gerado no POST /experiments
+  - PCAPs ficam em subdiretório do experimento (não global) — isolamento por experimento
+  - JSON referencia PCAPs com paths relativos dentro do diretório do experimento
+  - CSV tem uma linha por execução de ataque (base + variantes), não por iteração do loop principal
+
+  Questão: o CSV deve ter uma linha por iteração principal (aggregado) ou uma linha por execução de ataque (base + cada variante individualmente)? Para análise de evasão, granularidade por execução é mais útil.
+
+<!-------------->
+
+Sim, acho que é uma boa ideia ter uma linha por execução de ataque no CSV, para fornecer granularidade suficiente para a análise de evasão.
+
+<!-------------->
+
+Questão 16 — Taxonomia de erros estruturados (Issue 4.1)
+
+  Consolidando tudo o que foi decidido até aqui, o sistema produz estes erros nomeados:
+
+  ┌─────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+  │            Erro             │                                        Quando                                         │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ UnmappedIntentError         │ Intent do operador não mapeia para nenhuma entrada do catálogo                        │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ SlotValidationError         │ Attacker Agent esgotou max_retries com slots inválidos                                │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ SIDCounterCorruptedError    │ sid_counter.json ausente ou corrompido na startup                                     │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ AttackTimeoutError          │ Container de ataque morto após extensão de timeout                                    │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ IDSReloadError              │ GET /health retorna status: error após docker restart (regra inválida ou Snort crash) │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ PCAPRetrievalError          │ Arquivo PCAP não encontrado no path esperado após execução do container               │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ IDSAPIUnreachableError      │ Entidade 2 não responde após N retries                                                │
+  ├─────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ AttackerAPIUnreachableError │ Entidade 3 não responde após N retries                                                │
+  └─────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+
+  Para os erros de API unreachable: o Orchestrator deve retentar com backoff antes de falhar. Proposta: 3 tentativas com backoff exponencial (1s, 2s, 4s), configurável via rest_api_retry.max_attempts e rest_api_retry.base_delay_seconds.
+
+  Você confirma essa lista de erros e a política de retry para APIs externas?
+
+<!-------------->
+
+Sim.
+
+<!-------------->
+
+Questão 17 — Estratégia de testes para componentes com dependências externas (Issue 7.3)
+
+  O PRD define TDD. Mas vários módulos dependem de infraestrutura real: Snort em Docker, containers de ataque, tshark. Sem uma estratégia definida, ou os testes ficam lentos/frágeis (dependem de Docker ativo) ou são mocks que não testam o que importa.
+
+  Proposta de dois níveis:
+
+  Nível 1 — Testes unitários com doubles (rápidos, sem infraestrutura):
+  - IDS Rule Validator, IDS Rule Injector, IDS Monitor: testados com um servidor FastAPI fake que simula a IDS Management API
+  - SID Manager: testado com filesystem temporário (tmp_path)
+  - Experiment Recorder: testado com filesystem temporário
+  - PCAP Capture: testado com um mock de subprocess que cria um arquivo fake
+
+  Nível 2 — Testes de integração com infraestrutura real (lentos, marcados como @pytest.mark.integration):
+  - Rodam apenas quando Docker está disponível (pytest -m integration)
+  - Testam IDS Rule Injector contra o container snort_ids real
+  - Testam skills de ataque com containers Docker reais em rede isolada
+
+  Isso satisfaz TDD sem exigir Docker em todo pytest run. Os testes unitários são o ciclo red-green-refactor; os de integração validam o comportamento end-to-end.
+
+  Você concorda com essa separação por marcador @pytest.mark.integration?
+
+<!-------------->
+
+Sim
+
+<!-------------->
+
+Questão 18 — Inicialização das entidades (Issue 7.1)
+
+  Como o operador sobe o sistema? Duas opções principais:
+
+  A — docker-compose.yml único: define todos os serviços (Orchestrator, IDS Management API, Attacker API, Snort) com dependências e ordem de inicialização declaradas. docker compose up sobe tudo.
+
+  B — Scripts individuais por entidade: cada entidade tem seu próprio start.sh. O operador inicia na ordem certa manualmente.
+
+  Minha recomendação: A (docker-compose.yml), porque: (1) a ordem de inicialização é não-trivial — o Snort deve estar pronto antes da IDS API, que deve estar pronta antes do Orchestrator; (2) docker-compose declara depends_on e healthcheck nativamente; (3) é o padrão para ambientes de pesquisa multi-serviço.
+
+  Você prefere docker-compose ou scripts individuais?
+
+<!-------------->
+
+No contexto inicial da pesquisa, onde o ambiente é controlado e o operador é técnico, a máquina que roda o snort_ids será acessada via SSH pelo agente conseguir testar a sintaxe do Snort e reiniciar o container quando necessário. O mesmo serve para os ataques, que estão em outra máquina, acessível via SSH, onde serão executados em containers Docker pré-configurados com os ataques.
+
+<!-------------->
+
+Isso resolve a Issue 7.1 e clarifica a Issue 1.3 para o caso distribuído.
+
+  Mas isso expõe uma inconsistência no Experiment Record: o campo pcap_path em experiment.json aponta para um path em Entity 3 — não acessível diretamente pela máquina que escreve o JSON (Entity 1).
+
+  Questão 19 — PCAP path no Experiment Record (consequência da topologia distribuída)
+
+  Com Entity 3 sendo uma máquina separada, o pcap_path no experiment.json escrito por Entity 1 seria algo como /home/user/pcaps/iter1_base.pcap — um path que só faz sentido na máquina remota.
+
+  Duas opções:
+
+  A — Path remoto com hostname: o Experiment Record armazena "entity3_host:path" ou um objeto { "host": "192.168.1.10", "path": "/pcaps/iter1_base.pcap" }. O pesquisador sabe de onde buscar.
+
+  B — Apenas o summary, sem path raw: o Experiment Record não tenta referenciar o PCAP remoto. O pcap_summary (já convertido) é suficiente para análise via JSON. O pesquisador acessa os PCAPs brutos diretamente em Entity 3 quando necessário.
+
+  Minha recomendação: B, porque um path remoto no JSON não é acionável — você não pode abrir no Wireshark clicando no path. O pcap_summary é o dado útil para análise automatizada. PCAPs brutos ficam em Entity 3 e o pesquisador sabe onde buscar.
+
+  Você concorda em remover pcap_path do Experiment Record e manter apenas pcap_summary?
+
+<!-------------->
+
+Na prática, o arquivo não poderia ser recuperado via `scp`? Se não, vamos para a opção B.
+
+<!-------------->
+
+scp funciona, mas adiciona uma dependência de SSH fora da arquitetura REST já estabelecida. Tem uma alternativa mais limpa:
+
+  Opção C — Attacker API serve o PCAP via HTTP: adicionar GET /pcaps/{filename} na Attacker API. O Orchestrator baixa o arquivo após a execução e salva em
+  results/{experiment_id}/pcaps/ na máquina de Entity 1. O pcap_path no Experiment Record passa a ser um path local e acessível.
+
+  Isso mantém tudo dentro do modelo REST, sem credenciais SSH no Orchestrator. O custo é um endpoint a mais na Attacker API.
+
+  Minha recomendação: C, porque:
+  1. Sem dependência de SSH nem configuração de chaves no Orchestrator
+  2. O pcap_path no Experiment Record vira um path local — o pesquisador abre direto no Wireshark
+  3. Consistente com a arquitetura já estabelecida (REST para tudo entre entidades)
+
+  Você prefere o download via HTTP (opção C) ou descarta o PCAP bruto no Experiment Record (opção B)?
+
+<!-------------->
+
+Gostei da sua opção C. Quero ela.
+
+<!-------------->
+
+ Das 25 issues originais, aqui está o status:
+
+  ┌───────────────────────────────────────┬─────────────────────────────────────────────────────┐
+  │                 Issue                 │                       Status                        │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 1.1 Contrato completo das 10 entradas │ Em aberto — detalhes de implementação de cada skill │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 1.2 MQTT CLI ou Docker                │ ✅ Docker para todos                                │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 1.3 PCAP handoff                      │ ✅ GET /pcaps/{filename} na Attacker API            │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 1.4 allowed_tools                     │ ✅ Deferido                                         │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 2.1–2.5 Schemas e variantes           │ ✅ Todos resolvidos                                 │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 3.1–3.3 Observabilidade               │ ✅ Todos resolvidos                                │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 4.1–4.5 Robustez                      │ ✅ Todos resolvidos                                │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 5.1–5.3 Integração IDS                │ ✅ Todos resolvidos                                 │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 6.1–6.3 Prompts                       │ Em aberto — detalhes de implementação               │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 7.1 Startup                           │ ✅ Máquinas separadas, início manual                │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 7.2 Limpeza de artefatos              │ Em aberto — não é decisão arquitetural              │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ 7.3 Testes                            │ ✅ Dois níveis com @pytest.mark.integration         │
+  └───────────────────────────────────────┴─────────────────────────────────────────────────────┘
+
+  As issues 1.1 e 6.x são detalhes de implementação que serão resolvidos durante o TDD, não decisões arquiteturais. Posso agora atualizar o docs/PRD.md para refletir todas as decisões tomadas aqui. Quer que eu faça isso?
+
+<!-------------->
+
+Sim, quero!
+
+<!-------------->
+
+Pronto. Aqui está o resumo do que foi feito:
+
+  Decisões tomadas e registradas:
+  - Variantes geradas uma a uma pelo LLM, com histórico acumulado completo
+  - Convergência exige 100% de detecção; Orchestrator para na primeira evasão
+  - FeedbackPayload inclui pcap_summary (tshark), ids_logs e evasion_rationale
+  - RuleAgentOutput agora tem rules: list[str] + diagnosis: str | None
+  - PCAP servido via GET /pcaps/{filename} na Attacker API e baixado pelo Orchestrator
+  - IDS reload via docker restart snort_ids + polling GET /health
+  - ai_generated.rules sobrescrito a cada injeção (nunca append)
+  - Todos os ataques usam Docker (sem fallback CLI)
+  - Topologia de máquinas físicas separadas, startup manual por entidade
+  - Estado do Orchestrator apenas em memória
+  - SID Manager falha explicitamente se sid_counter.json estiver corrompido
+  - Taxonomia completa de 8 erros estruturados com retry exponencial para APIs externas
+  - Estratégia de testes em dois níveis (@pytest.mark.integration)
+  - allowed_catalog_entries deferido
+
+  Pendências restantes: contrato detalhado das 10 skills e estrutura dos prompts dos agentes — ambos resolvidos durante o TDD.
+
+<!-------------->
+
+
+
+<!-------------->
+
+
+
+<!-------------->
+
+
+
+<!-------------->
+
+
+
+<!-------------->
+
+
+
+<!-------------->
+
+
+
+<!-------------->
+
+
+
+<!-------------->
+
