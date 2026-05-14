@@ -12,7 +12,7 @@ from rules_farmer.attack_executor import AttackExecutor
 from rules_farmer.attacker_agent import AttackerAgent
 from rules_farmer.config import load_config
 from rules_farmer.execution_logging import configure_execution_logging, log_stage
-from rules_farmer.experiment_recorder import ExperimentRecorder
+from rules_farmer.experiment_recorder import ExperimentIDFactory, ExperimentRecorder
 from rules_farmer.ids_monitor import IDSMonitor
 from rules_farmer.ids_rule_injector import IDSRuleInjector
 from rules_farmer.ids_rule_validator import SnortRuleValidator
@@ -134,6 +134,8 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         capture_interface=config.testbed.attacker_capture_interface,
     )
 
+    experiment_id_factory = ExperimentIDFactory(config.testbed.experiment_counter_file_path)
+
     orchestrator = Orchestrator(
         rule_agent=RuleAgent(
             llm_client=rule_llm,
@@ -147,6 +149,7 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         attack_executor=attack_executor,
         monitor=monitor,
         recorder=recorder,
+        experiment_id_factory=experiment_id_factory,
     )
 
     logger.debug(

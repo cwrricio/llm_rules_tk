@@ -3,10 +3,12 @@ llm:
     provider: deepseek
     model: deepseek-v4-pro
     temperature: 0
+    max_tokens: 8192
   attacker_agent:
     provider: deepseek
     model: deepseek-v4-pro
     temperature: 0
+    max_tokens: 8192
 
 timeouts:
   attack_tool_seconds: 60
@@ -39,7 +41,8 @@ testbed:
   ids_rule_include_statement: include rules/temp/rules_farmer_ai.rules
   ids_container_name: snort_ids
   ids_snort_config_path: /opt/snort3/etc/snort/snort.lua
-  attacker_attacks_root: /home/unipampa/ataques/attackers-claude
+  attacker_attacks_root: /home/unipampa/ataques-artigo
   attacker_capture_interface: any
   sid_counter_file_path: ./data/sid_counter.json
+  experiment_counter_file_path: ./data/experiment_counter.json
   results_output_dir: ./results

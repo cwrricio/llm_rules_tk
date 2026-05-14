@@ -18,7 +18,7 @@ class AgentModelConfig(BaseModel):
     provider: str
     model: str
     temperature: float
-    max_tokens: int = 2048
+    max_tokens: int = 8192
 
 
 class LLMConfig(BaseModel):
@@ -80,6 +80,7 @@ class TestbedConfig(BaseModel):
     ids_snort_config_path: str
     sid_counter_file_path: str
     sid_mapping_file_path: str = "./data/sid_mappings.json"
+    experiment_counter_file_path: str = "./data/experiment_counter.json"
     attacker_attacks_root: str
     attacker_capture_interface: str = "any"
     results_output_dir: str

@@ -58,8 +58,11 @@ class SnortRuleValidator:
             logger.warning("Snort rule pre-validation rejected error=%s", pre.error)
             return pre
 
+        # Snort rejects sid:0; — substitute a temporary SID for the syntax check only.
+        # SID assignment happens after validation passes (orchestrator.assign_sids).
+        validation_rule = re.sub(r"sid\s*:\s*0\s*;", "sid:999999999;", rule)
         temp_path = shlex.quote(self.temp_rule_path)
-        self.ssh_client.run_command(f"cat > {temp_path} <<'EOF'\n{rule}\nEOF")
+        self.ssh_client.run_command(f"cat > {temp_path} <<'EOF'\n{validation_rule}\nEOF")
         self.ssh_client.run_command(
             "docker cp "
             f"{temp_path} "
@@ -104,6 +107,28 @@ class SnortRuleValidator:
                     valid=False,
                     error=f"Forbidden Snort 2 keyword '{keyword.rstrip(':')}': {reason}",
                 )
+
+        flow_match = re.search(r"flow\s*:\s*([^;]+);", rule_body)
+        if flow_match:
+            flow_opts = [o.strip() for o in flow_match.group(1).split(",")]
+            if "stateless" in flow_opts and len(flow_opts) > 1:
+                return ValidationResult(
+                    valid=False,
+                    error="flow:stateless cannot be combined with other flow options in Snort 3",
+                )
+
+        _CONTENT_MODIFIERS = r"(nocase|rawbytes|offset|depth|within|distance)"
+        if re.search(
+            r'content\s*:\s*"[^"]*"\s*,' + r"\s*" + _CONTENT_MODIFIERS,
+            rule_body,
+        ):
+            return ValidationResult(
+                valid=False,
+                error=(
+                    "Content modifiers must be separate options: "
+                    'use content:"X"; rawbytes; not content:"X", rawbytes; (Snort 2 syntax)'
+                ),
+            )
 
         return None
 

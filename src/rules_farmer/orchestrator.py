@@ -9,6 +9,7 @@ from typing import Callable
 
 from rules_farmer.experiment_recorder import ExperimentRecorder
 from rules_farmer.execution_logging import log_stage
+from rules_farmer.llm_client import LLMClientError
 from rules_farmer.schemas import AttackerRequest, FeedbackPayload, VariantResult
 
 
@@ -98,11 +99,20 @@ class Orchestrator:
             logger.debug("Iteration started experiment_id=%s iteration=%s", experiment_id, iteration)
             log_stage("AGORA ESTA GERANDO A REGRA")
             logger.debug("Generating IDS rule experiment_id=%s iteration=%s", experiment_id, iteration)
-            rule_output = self.rule_agent.run(
-                intent=intent,
-                previous_rules=previous_rules,
-                feedback=feedback,
-            )
+            try:
+                rule_output = self.rule_agent.run(
+                    intent=intent,
+                    previous_rules=previous_rules,
+                    feedback=feedback,
+                )
+            except LLMClientError as exc:
+                logger.warning(
+                    "Rule generation LLM error, skipping iteration experiment_id=%s iteration=%s error=%s",
+                    experiment_id,
+                    iteration,
+                    exc,
+                )
+                continue
             previous_rules = rule_output.rules
             logger.info(
                 "Rule generation finished experiment_id=%s iteration=%s rule_count=%s diagnosis_present=%s",
@@ -111,17 +121,36 @@ class Orchestrator:
                 len(rule_output.rules),
                 rule_output.diagnosis is not None,
             )
-
-            if not self._rules_are_valid(rule_output.rules):
-                logger.warning(
-                    "Rule validation failed experiment_id=%s iteration=%s",
+            for rule_index, rule in enumerate(rule_output.rules, start=1):
+                logger.info(
+                    "Generated rule experiment_id=%s iteration=%s rule_index=%s/%s rule=%s",
                     experiment_id,
                     iteration,
+                    rule_index,
+                    len(rule_output.rules),
+                    rule,
+                )
+            if rule_output.diagnosis:
+                logger.info(
+                    "Rule agent diagnosis experiment_id=%s iteration=%s diagnosis=%s",
+                    experiment_id,
+                    iteration,
+                    rule_output.diagnosis,
+                )
+
+            validation_error = self._validate_rules(rule_output.rules)
+            if validation_error is not None:
+                logger.warning(
+                    "Rule validation failed experiment_id=%s iteration=%s validation_error=%s",
+                    experiment_id,
+                    iteration,
+                    validation_error,
                 )
                 feedback = FeedbackPayload(
                     pcap_summary="",
                     ids_logs="",
-                    evasion_rationale="Rule validation failed",
+                    evasion_rationale="Rule syntax validation failed",
+                    validation_error=validation_error,
                 )
                 continue
 
@@ -217,7 +246,7 @@ class Orchestrator:
             csv_path=artifacts.csv_path,
         )
 
-    def _rules_are_valid(self, rules: list[str]) -> bool:
+    def _validate_rules(self, rules: list[str]) -> str | None:
         log_stage("AGORA ESTA VALIDANDO A REGRA")
         for index, rule in enumerate(rules, start=1):
             logger.debug("Validating rule %s/%s", index, len(rules))
@@ -229,10 +258,10 @@ class Orchestrator:
                     len(rules),
                     result.error,
                 )
-                return False
+                return result.error
             logger.debug("Rule validation accepted rule_index=%s/%s", index, len(rules))
         logger.info("Rule validation accepted rule_count=%s", len(rules))
-        return True
+        return None
 
     def _run_attack_execution(
         self,
@@ -267,6 +296,13 @@ class Orchestrator:
             execution_type,
             plan.attack_id,
             plan.arguments,
+        )
+        logger.info(
+            "Attack evasion rationale experiment_id=%s iteration=%s execution_type=%s rationale=%s",
+            experiment_id,
+            iteration,
+            execution_type,
+            plan.evasion_rationale,
         )
         log_stage("AGORA ESTA RODANDO O ATACANTE")
         logger.debug(
@@ -330,6 +366,13 @@ class Orchestrator:
                 pcap_summary=execution.pcap_summary,
                 ids_logs="",
                 evasion_rationale=plan.evasion_rationale,
+            )
+            logger.info(
+                "Attack did not fire, building feedback experiment_id=%s iteration=%s execution_type=%s pcap_summary_bytes=%s",
+                experiment_id,
+                iteration,
+                execution_type,
+                len(execution.pcap_summary.encode()),
             )
         return _AttackOutcome(fired=fired, feedback=feedback)
 

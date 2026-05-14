@@ -24,6 +24,7 @@ class FeedbackPayload(BaseModel):
     pcap_summary: str
     ids_logs: str
     evasion_rationale: str
+    validation_error: str | None = None
 
 
 class AttackPlan(BaseModel):

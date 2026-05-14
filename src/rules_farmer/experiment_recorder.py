@@ -14,6 +14,33 @@ ExecutionType = Literal["base", "variant"]
 logger = logging.getLogger(__name__)
 
 
+class ExperimentIDFactory:
+    """Generates sequential zero-padded experiment IDs (0001, 0002, …) persisted in a counter file."""
+
+    def __init__(self, counter_path: str | Path):
+        self.counter_path = Path(counter_path)
+
+    def __call__(self) -> str:
+        counter = self._load()
+        counter += 1
+        self._save(counter)
+        return f"{counter:04d}"
+
+    def _load(self) -> int:
+        try:
+            data = json.loads(self.counter_path.read_text(encoding="utf-8"))
+            return int(data["counter"])
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            return 0
+
+    def _save(self, counter: int) -> None:
+        self.counter_path.parent.mkdir(parents=True, exist_ok=True)
+        self.counter_path.write_text(
+            json.dumps({"counter": counter}, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+
 @dataclass(frozen=True)
 class ExperimentArtifacts:
     json_path: Path

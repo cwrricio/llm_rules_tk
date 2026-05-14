@@ -1,7 +1,7 @@
 import csv
 import json
 
-from rules_farmer.experiment_recorder import ExperimentRecorder
+from rules_farmer.experiment_recorder import ExperimentIDFactory, ExperimentRecorder
 
 
 def test_recorder_writes_experiment_json_and_metrics_csv(tmp_path):
@@ -58,6 +58,22 @@ def test_recorder_writes_experiment_json_and_metrics_csv(tmp_path):
             "rule": "",
         }
     ]
+
+
+def test_experiment_id_factory_produces_sequential_zero_padded_ids(tmp_path):
+    factory = ExperimentIDFactory(tmp_path / "experiment_counter.json")
+
+    assert factory() == "0001"
+    assert factory() == "0002"
+    assert factory() == "0003"
+
+
+def test_experiment_id_factory_resumes_from_existing_counter(tmp_path):
+    counter_path = tmp_path / "experiment_counter.json"
+    counter_path.write_text('{"counter": 41}', encoding="utf-8")
+    factory = ExperimentIDFactory(counter_path)
+
+    assert factory() == "0042"
 
 
 def test_recorder_marks_experiment_error_and_writes_metrics_header(tmp_path):
