@@ -1,0 +1,267 @@
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ ls
+community_rules       juntar_arquivos.sh  renew-snort.sh  rules_claude
+community_rules_temp  logs                rules           snort.lua
+Dockerfile            README.md           rules-backup    start_snort.sh
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ cat start_snort.sh 
+#!/bin/bash
+
+# Configurações de caminhos - Ajuste se necessário
+SNORT_BIN="/opt/snort3/bin/snort"
+CONFIG_FILE="/opt/snort3/etc/snort/snort.lua"
+LOG_DIR="/opt/snort3/logs"
+
+# Define interface padrão se não fornecida
+INTERFACE=${1:-ens33}
+SNORT_CHECKSUM_MODE=${SNORT_CHECKSUM_MODE:-none}
+
+# Remove o primeiro argumento para passar o resto para o snort
+shift || true
+
+echo "=========================================="
+echo "        Snort3 Detector Iniciando"
+echo "=========================================="
+echo "Interface: $INTERFACE"
+echo "Config:    $CONFIG_FILE"
+echo "Logs:      $LOG_DIR"
+echo "=========================================="
+
+# 1. Verifica se o binário do Snort existe
+if [ ! -f "$SNORT_BIN" ]; then
+    echo "ERRO: Binário do Snort não encontrado em $SNORT_BIN"
+    exit 1
+fi
+
+# 2. Verifica se a interface existe
+if ! ip link show "$INTERFACE" > /dev/null 2>&1; then
+    echo "ERRO: Interface '$INTERFACE' não encontrada!"
+    echo "Interfaces disponíveis:"
+    ip link show | grep -E '^[0-9]+:' | awk '{print $2}' | tr -d ':'
+    exit 1
+fi
+
+# 3. Testa a configuração antes de iniciar
+echo "Testando configuração do Snort3..."
+if ! "$SNORT_BIN" -c "$CONFIG_FILE" -T; then
+    echo "------------------------------------------"
+    echo "ERRO: Configuração do Snort3 inválida!"
+    exit 1
+fi
+
+echo "Configuração OK! Iniciando Snort3..."
+echo "Para parar: Ctrl+C"
+echo "Checksum mode: $SNORT_CHECKSUM_MODE"
+echo "=========================================="
+
+
+# Inicia o Snort3 com os parâmetros fornecidos
+exec snort -c /opt/snort3/etc/snort/snort.lua -i "$INTERFACE" -k "$SNORT_CHECKSUM_MODE" -v -l /opt/snort3/logs "$@"
+
+# 4. Inicia o Snort3 (usando sudo para garantir permissões)
+"$SNORT_BIN" -c "$CONFIG_FILE" -i "$INTERFACE" -v -l "$LOG_DIR" "$@"
+
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ cat renew-snort.sh 
+#!/bin/bash
+
+docker stop snort_ids
+
+sudo truncate -s 0 $(docker inspect --format='{{.LogPath}}' snort_ids)
+
+# sudo truncate -s 0 ./logs/*
+
+docker restart snort_ids
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ ls
+community_rules       juntar_arquivos.sh  renew-snort.sh  rules_claude
+community_rules_temp  logs                rules           snort.lua
+Dockerfile            README.md           rules-backup    start_snort.sh
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ cat snort.lua 
+-- /opt/snort3/etc/snort/snort.lua
+-- Configuração Otimizada para GT-IoTEdu (Snort 3.9.7.0)
+
+---------------------------------------------------------------------------
+-- 1. Definições Iniciais
+---------------------------------------------------------------------------
+include 'snort_defaults.lua'
+
+-- 2. Variáveis de Rede
+network = { checksum_eval = 'none' }
+HOME_NET = 'any'
+EXTERNAL_NET = 'any'
+
+-- Definição de Portas dos Serviços
+HTTP_PORTS = '80 8080'
+SSH_PORTS = '22 2222'
+TELNET_PORTS = '23 2323'
+MQTT_PORTS = '1883'
+SSL_PORTS = '443 8443'
+SMB_PORTS = '139 445'
+
+---------------------------------------------------------------------------
+-- 2. Configuração de Inspetores
+---------------------------------------------------------------------------
+-- Inspetores básicos necessários para remontagem de pacotes
+stream = { }
+stream_tcp = { }
+stream_udp = { }
+stream_icmp = { }
+port_scan = { protos = 'all'}
+
+-- Ativa o Wizard para detecção dinâmica (Crucial para portas não padrão)
+wizard = { }
+
+-- Inspetores de Protocolo específicos
+http_inspect = { }
+ssh = { } -- Necessário para detectar o brute force na 2222
+
+-- Nota: Telnet e SSL removidos como módulos diretos para evitar erro de bind,
+-- o Snort usará o 'wizard' para analisá-los nestas portas.
+
+---------------------------------------------------------------------------
+-- 3. Binder (Onde ligamos a porta ao protocolo)
+---------------------------------------------------------------------------
+binder =
+{
+    -- Liga portas HTTP ao inspetor de HTTP
+    { when = { proto = 'tcp', ports = HTTP_PORTS }, use = { type = 'http_inspect' } },
+    
+    -- Liga portas SSH ao inspetor de SSH
+    { when = { proto = 'tcp', ports = SSH_PORTS }, use = { type = 'ssh' } },
+    
+    -- Para as demais portas (Telnet, SSL, MQTT, etc), usamos o wizard.
+    -- O wizard identifica o protocolo pelo payload, evitando erros de inicialização.
+    { when = { proto = 'tcp', ports = TELNET_PORTS .. ' ' .. SSL_PORTS .. ' ' .. MQTT_PORTS }, use = { type = 'wizard' } },
+    
+    -- Fallback padrão
+    { use = { type = 'wizard' } }
+}
+
+---------------------------------------------------------------------------
+-- 4. Módulo IPS e Regras
+---------------------------------------------------------------------------
+ips =
+{
+    variables =
+    {
+        nets = {
+            HOME_NET = HOME_NET,
+            EXTERNAL_NET = EXTERNAL_NET,
+            TELNET_SERVERS = 'any',
+            SMTP_SERVERS = 'any',
+            HTTP_SERVERS = 'any',
+            SQL_SERVERS = 'any',
+	    SIP_SERVERS = 'any'
+        },
+
+        ports = {
+            HTTP_PORTS = HTTP_PORTS,
+            SSH_PORTS = SSH_PORTS,
+	    FILE_DATA_PORTS = 'any',
+            ORACLE_PORTS = 'any',
+            SIP_PORTS = 'any',
+            FTP_PORTS = 'any'
+        }
+    },
+
+    rules = [[
+        include rules/all.rules
+    ]]
+}
+
+---------------------------------------------------------------------------
+-- 5. Configuração de Alertas e Saída
+---------------------------------------------------------------------------
+-- Habilita o modo de alerta rápido (fast)
+alert_fast = { file = true, packet = false }
+alert_full = { file = true }
+
+-- Configurações de decodificação e inspeção
+decode = { }
+active = { }
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ ls
+community_rules       juntar_arquivos.sh  renew-snort.sh  rules_claude
+community_rules_temp  logs                rules           snort.lua
+Dockerfile            README.md           rules-backup    start_snort.sh
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ cat rules
+cat: rules: Is a directory
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort$ cd rules
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort/rules$ ls
+01-reconhecimento-descoberta.rules      mqtt-lwt-abuse.rules
+02-interceptacao-exploracao-rede.rules  mqtt-publisher-flood.rules
+03-ataques-aplicacao-web.rules          mqtt-qos-amplification.rules
+04-forca-bruta-acesso-remoto.rules      path-traversal.rules
+05-exfiltracao-tunel.rules              ping-flood.rules
+06-negacao-servico-impacto.rules        ping-sweep.rules
+07-iot.rules                            port-scanner.rules
+08-nao-classificadas.rules              psh-flood.rules
+all.rules                               rst-flood.rules
+all.rules.save                          smb-enumerating.rules
+brute-force-ssh.rules                   snmp-scanner.rules
+brute-force-telnet.rules                snort3-community.rules
+categorize_rules.py                     sql-injection.rules
+claude-rules.rules                      ssl-heartbleed.rules
+coap-get-flood.rules                    syn-flood.rules
+coap-resource-exhaustion.rules          temp
+coap-response-fuzz.rules                udp-flood.rules
+coap-token-collision.rules              udp-flood.rules.save
+dhcp-starvation.rules                   web-post-bruteforce.rules
+dns-tunneling.rules                     web-simple-scanner.rules
+dos-http.rules                          web-wide-scanner.rules
+final                                   xrce.rules
+fin-flood.rules                         xss-scanner.rules
+icmp-tunnel.rules                       zenoh-fragments-reassembly.rules
+idor-url-parameter.rules                zenoh-pico-keepalive-flood.rules
+ipv6-mld-flood.rules                    zenoh-pico-memory-exhaustion.rules
+ipv6-ns-flood.rules                     zenoh-pico-proto-fuzzer.rules
+ipv6-ra-flood.rules                     zenoh-pico-sequence-exhaustion.rules
+local.rules                             zenoh-pico-timestamp-manipulation.rules
+mqtt-bruteforce.rules
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort/rules$ cat all.rules
+#include rules/local.rules
+#include rules/brute-force-ssh.rules
+#include rules/dns-tunneling.rules
+#include rules/dos-http.rules
+#include rules/ping-flood.rules
+#include rules/sql-injection.rules
+#include rules/brute-force-telnet.rules
+#include rules/smb-enumerating.rules
+#include rules/ssl-heartbleed.rules
+#include rules/xss-scanner.rules
+#include rules/path-traversal.rules
+#include rules/ping-sweep.rules
+#include rules/xrce.rules
+#include rules/snmp-scanner.rules
+#include rules/mqtt-qos-amplification.rules
+#include rules/mqtt-publisher-flood.rules
+#include rules/mqtt-lwt-abuse.rules
+#include rules/mqtt-bruteforce.rules
+#include rules/udp-flood.rules
+#include rules/idor-url-parameter.rules
+#include rules/coap-get-flood.rules
+#include rules/coap-response-fuzz.rules
+#include rules/coap-token-collision.rules
+#include rules/coap-resource-exhaustion.rules
+#include rules/zenoh-fragments-reassembly.rules
+#include rules/zenoh-pico-keepalive-flood.rules
+#include rules/zenoh-pico-memory-exhaustion.rules
+#include rules/zenoh-pico-sequence-exhaustion.rules
+#include rules/zenoh-pico-timestamp-manipulation.rules
+#include rules/syn-flood.rules
+#include rules/ipv6-ra-flood.rules
+#include rules/ipv6-ns-flood.rules
+#include rules/ipv6-mld-flood.rules
+#include rules/fin-flood.rules
+#include rules/rst-flood.rules
+#include rules/psh-flood.rules
+#include rules/web-simple-scanner.rules
+#include rules/web-wide-scanner.rules
+#include rules/web-post-bruteforce.rules
+#include rules/icmp-tunnel.rules
+#include rules/port-scanner.rules
+#include rules/dhcp-starvation.rules
+#include rules/zenoh-pico-proto-fuzzer.rules
+##include rules/snort3-community.rules
+#include rules/claude-rules.rules
+# >>> claude-managed (begin)
+# rewritten 2026-05-11T20:23:49Z
+include rules/temp/2026-05-11-run-d7af29.rules
+# <<< claude-managed (end)
+gtiotedu@gtiotedu:~/ataques-regras-e-assinaturas/snort/rules$ 

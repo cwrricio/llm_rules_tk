@@ -2146,31 +2146,355 @@ Pronto. Aqui está o resumo do que foi feito:
 
 <!-------------->
 
+/grill-with-docs vamos resolver as pendencias que ainda temos. use como contexto @docs/PRD.md, @docs/system_overview.md e @pending_issues.md                                                
+
+<!-------------->
+
+● Good. I've read the CONTEXT.md, both ADRs, the PRD, and the pending issues.
+  Before we tackle Issue 1.1, I need to surface a contradiction I found.
+
+  ---
+  ADR-0002 says: the Attacker Agent uses Agno's LocalSkills — it reads SKILL.md
+  files, reasons about which skill to use, and invokes python3 scripts/main.py
+  [positional_args]. The main.py is the invocation boundary.
+
+  PRD says: the Attacker Agent generates an AttackPlan (catalog_entry_id + slots
+   + evasion_rationale), and deterministic code executes the Docker container.
+  The LLM's only job is picking the entry and filling slots. No mention of
+  SKILL.md or scripts/main.py.
+
+  These are two different invocation models. The PRD is more recent and aligns
+  better with "the LLM is never responsible for system guarantees" — the LLM
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Invocation model 
+
+The ADR describes Agno LocalSkills with SKILL.md + scripts/main.py as the invocation boundary. The PRD describes AttackPlan + deterministic Docker launch (no main.py). Which model is
+authoritative?
+
+❯ 1. PRD wins — AttackPlan + deterministic Docker launch
+     LLM outputs AttackPlan struct. Deterministic code validates slots and invokes Docker directly via `docker run`. The ADR needs to be updated. No scripts/main.py in the invocation path —
+      that layer is eliminated.
+  2. ADR wins — Agno LocalSkills + scripts/main.py
+     Keep SKILL.md + scripts/main.py as the invocation interface. Each main.py internally launches Docker. Agno discovers skills via LocalSkills. The PRD API contract and AttackPlan schema
+     still hold, but the implementation goes through main.py.
+  3. Hybrid — SKILL.md as catalog metadata, Docker launched directly
+     SKILL.md defines the catalog entry (Docker image, slots, exit codes). Agno reads SKILL.md to give the LLM context. But deterministic code (not main.py) invokes Docker. SKILL.md +
+     references/ remain; scripts/ is eliminated.
+  4. Type something.
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
 
 
 <!-------------->
 
+são duas coisas diferentes: uma coisa é a skill do agente que decide como variar o ataque. outra coisa é a forma como ele vai atacar, que seria acessando uma máquina pré-configurada via chave pública de SSH e executando o comando docker para o ataque
+
+<!-------------->
+
+ ☐ Topologia Attacker 
+
+Onde roda o Attacker Agent (o LLM + Agno)? E qual máquina ele acessa via SSH para executar o Docker?
+
+  1. Agente na Entity 1, SSH para Entity 3
+     O LLM (Agno) roda junto com o Orchestrator na Entity 1. Quando decide qual ataque rodar, faz SSH na Entity 3 (máquina pré-configurada com Docker) e executa o container lá. Não há REST
+     API na Entity 3 — a comunicação é via SSH. PCAP é recuperado via SCP.
+  2. Agente na Entity 3, REST API exposta para Entity 1
+     O LLM (Agno) roda na Entity 3. A Entity 3 exposta uma REST API. O Orchestrator (Entity 1) chama POST /attacks. Internamente, a Entity 3 usa SSH para executar Docker... em si mesma? Ou
+     o Docker roda diretamente na Entity 3 sem SSH?
+❯ 3. Agente na Entity 1, REST API na Entity 3 é apenas um wrapper SSH
+     O LLM (Agno) roda na Entity 1. A Entity 3 exposta uma REST API minimal que apenas recebe o AttackPlan e executa Docker localmente (sem SSH adicional). O 'acesso via SSH com chave
+     pública' é como a Entity 3 acessa a Entity 4 (o alvo) para captura de tráfego, não a Entity 1 acessando a Entity 3.
+  4. Type something.
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
 
 
 <!-------------->
 
+a solução (entity 1 - Orchestrator) vai estar rodando localmente, em uma máquina 1. a máquina 2 seria o Entity 2, que será acessada via SSH para que os comandos que dependem do IDS (testar sintáxe, docker restart) sejam executadas nela, no ambiente onde o IDS já está rodando e funcional. o Entity 3 é uma terceira máquina, acessada via SSH para que os comandos que dependem dos ataques (containers docker executados a partir de arquivos entrypoint.sh). Entity 4 (vítima), por hora, pode ser a própria máquina que está rodando o IDS (entity 2)
 
+<!-------------->
+● Isso muda tudo. Deixa eu ler o ADR-0001 antes de continuar.
+
+  Read 1 file (ctrl+o to expand)
+
+● O ADR-0001 foi uma decisão explícita de usar REST/HTTP em vez de SSH — justamente para evitar acoplamento por acesso direto. Agora você está descrevendo SSH direto para Entity 2 e Entity
+  3.
+
+<!-------------->
+
+1- SSH direto. Não há api rest entre as maquinas.
+<!-------------->
+O ADR-0001 foi uma decisão explícita de usar REST/HTTP em vez de SSH — justamente para evitar acoplamento por acesso direto. Agora você está descrevendo SSH direto para Entity 2 e Entity
+  3.
+
+  Isso invalida ADR-0001 inteiro, e muda radicalmente os componentes IDS Management API e Attacker API do PRD.
+
+● User answered Claude's questions:
+  ⎿  · A comunicação entre Entity 1 e as outras entidades é via SSH ou via REST API? → SSH direto — ADR-0001 está obsoleto
+
+● Certo. Isso torna ADR-0001 obsoleto. Vou atualizá-lo depois que resolvermos as consequências.
+     
+  A mudança para SSH tem uma implicação direta no ADR-0002. Se o Attacker Agent está na Entity 1 e o ataque executa via SSH na Entity 3, o scripts/main.py da skill não é mais o boundary de
+
+
+Com SSH como canal de comunicação, qual é o papel das Skills (diretórios com SKILL.md + scripts/) no Attacker Agent?
+
+  1. SKILL.md permanece, scripts/main.py é eliminado
+     Cada skill tem SKILL.md (descrição do ataque, slots, exemplos) e references/. O LLM lê o SKILL.md para raciocinar. Código determinístico faz SSH na Entity 3 e roda Docker com os slots 
+     preenchidos. Não há mais scripts/main.py.
+  2. scripts/main.py permanece, mas usa paramiko (SSH) internamente
+     O main.py existe localmente na Entity 1. Quando invocado pelo Agno, ele usa paramiko para SSH na Entity 3 e rodar Docker. O boundary de invocação continua sendo main.py, mas a execução
+     é remota.
+❯ 3. Type something.
+<!-------------->
+Ainda precisamos de um SKILL.MD. Skill especializada em rodar e variar ataques. O que é o paramiko? Precisamos eliminar scripts/main.py? Como a estrutura das pastas ja vai estar pre configurada, acho que daria pra ser deterministico (no caso, os comandos via ssh) -> mas não elimina a necessidade de uma skill especializada. Faz sentido?
+<!-------------->
+ Faz sentido. Deixa eu propor o modelo consolidado para você confirmar antes de avançar para
+   os catalog entries:
+
+  Modelo proposto:
+  - SKILL.md + references/ existem por ataque (10 diretórios) — documentação que o LLM lê
+  - Sem scripts/main.py — eliminado
+  - Uma Agno Skill especializada ("attack-reasoning") que lê o catálogo e raciocina sobre
+  qual ataque usar e como variar — não 10 skills separadas
+  - Código determinístico (usando paramiko — biblioteca Python para SSH, permite rodar
+  comandos remotos sem subprocess) faz SSH na Entity 3 e roda docker run
+  - fired é determinado pela Entity 1: ela faz SSH na Entity 2 e lê o alert log do IDS
+<!-------------->
+Faz sentido,confirmo o modelo. mas vale dizer que eu não espero que as variações dos ataques sejam realizadas SOMENTE levando as referencias em consideração. Idealmente, tanto o cenario da refencia quanto outros gerados devem ser detectados.
+<!-------------->
+Perfeito — dois pontos claros para registrar:
+
+  Sobre variants: O SKILL.md e references/ estabelecem o cenário canônico (ponto de partida),
+   mas o Attacker Agent raciocina sobre a estrutura da regra para gerar variantes criativas
+  além do que está documentado. A regra precisa detectar os dois. Isso já está no CONTEXT.md
+  como "Attacker Strategy" — apenas confirmando que references/ não são um teto.
+
+  Sobre paramiko: É uma biblioteca Python que implementa SSH nativamente. Em vez de chamar
+  subprocess.run(["ssh", "user@host", "docker run ..."]), você faz:
+
+  import paramiko
+
+  ssh = paramiko.SSHClient()
+  ssh.connect("192.168.1.3", username="admin", key_filename="/path/to/key")
+  stdin, stdout, stderr = ssh.exec_command(
+      "docker run -e TARGET_IP=192.168.1.2 -e TARGET_PORT=2018 
+  rules-farmer/xrce-dds-entity-flood"
+  )
+  exit_code = stdout.channel.recv_exit_status()
+
+  # PCAP retrieval
+  sftp = ssh.open_sftp()
+  sftp.get("/tmp/attack.pcap", "./results/exp123/pcaps/iter1_base.pcap")
+
+  Vantagem: não depende de ~/.ssh/config, você passa a chave explicitamente. Mais controlável
+   em testes.
+
+  ---
+  Agora vamos para Issue 1.1 — contrato das 10 entradas do catálogo.
+  
+  Antes de definir cada entrada, preciso fixar a estrutura do contrato. Para slots, a escolha
+   de passagem para o container Docker afeta como o catalog entry é definido.
+
+  Minha recomendação: environment variables (docker run -e TARGET_IP=... -e TARGET_PORT=...).
+─────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Slot passing 
+
+Slots são passados para os containers Docker como env vars ou args posicionais para o 
+entrypoint.sh?
+
+  1. Env vars — -e KEY=VALUE (Recomendado)
+     docker run -e TARGET_IP=192.168.1.2 -e TARGET_PORT=2018 
+     rules-farmer/xrce-dds-entity-flood. Nomeados, sem dependência de ordem. O entrypoint.sh 
+     lê $TARGET_IP, $TARGET_PORT.
+<!-------------->
+❯ 2. Args posicionais para entrypoint.sh
+     docker run rules-farmer/xrce-dds-entity-flood 192.168.1.2 2018 60. Ordem é contrato
+     entre o catálogo e o entrypoint.sh — mesmo problema que o ADR-0002 já apontou.
+<!-------------->
+ Agora vamos para Issue 1.1 — contrato das 10 entradas do catálogo.
+  
+  Antes de definir cada entrada, preciso fixar a estrutura do contrato. Para slots, a escolha
+   de passagem para o container Docker afeta como o catalog entry é definido.
+
+  Minha recomendação: environment variables (docker run -e TARGET_IP=... -e TARGET_PORT=...).
+   Slots nomeados, não posicionais — menos risco de erro de ordem, auto-documentável.
+
+● User answered Claude's questions:
+  ⎿  · Slots são passados para os containers Docker como env vars ou args posicionais para o 
+     entrypoint.sh? → Args posicionais para entrypoint.sh
+
+● Args posicionais. A ordem é o contrato entre o catálogo e o entrypoint.sh — o catálogo é a
+  fonte de verdade.
+     
+─────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Stdout contract  ☐ PCAP path  ✔ Submit  →
+
+O que o container escreve no stdout ao terminar com exit code 0?
+
+❯ 1. JSON estruturado (Recomendado)
+     {"pcap_path": "/tmp/attack.pcap", "packets_sent": 142, "duration_seconds": 10}. Código 
+     determinístico faz parse sem regex. Erros também como JSON no stderr.
+  2. Plain text
+     Linha livre, ex: 'Attack complete. 142 packets sent. PCAP at /tmp/attack.pcap'. Código
+     precisa de parse de string.
+  3. Type something.
+
+<!-------------->
+❯ 1. JSON estruturado (Recomendado)
+     {"pcap_path": "/tmp/attack.pcap", "packets_sent": 142, "duration_seconds": 10}. Código 
+     determinístico faz parse sem regex. Erros também como JSON no stderr.
+
+<!-------------->
+
+Qual é o caminho do PCAP dentro do container?
+
+❯ 1. Fixo: /tmp/attack.pcap (Recomendado)
+     Mesmo path em todos os 10 containers. Cada run é isolado. SCP sempre busca 
+     /tmp/attack.pcap. Simples e sem ambiguidade.
+  2. Configurável por catalog entry
+     Cada entry define seu próprio PCAP path. Mais flexível, mas adiciona variação desnecária
+      entre entries.
+  3. Type something.
+
+<!-------------->
+não infira nada. os entrypoints dos ataques vão estar disponíveis para você consultar na máquina atacante, eu posso passar o caminho relativo como parâmetro de execução.
+<!-------------->
+ Fica para TDD (por skill):
+  - Slots específicos de cada entry → lidos dos entrypoints reais na Entity 3
+  - Ranges válidos → derivados da implementação 
+
+  ---
+  Agora Issues 6.1, 6.2, 6.3 — os system prompts dos agentes. Vou tacklear um por vez.
+  
+  Issue 6.1 — Rule Agent system prompt.
+
+  O Rule Agent recebe a intenção do operador e produz regras Snort. O prompt precisa definir:
+  - Formato exato da regra esperada
+  - Campos obrigatórios
+  - Comportamento em ambiguidade
+─────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Rule Agent ambiguidade  ☐ Campo msg da regra  ✔ Submit  →
+
+Quando a intenção do operador é ambígua (ex: 'bloquear tráfego suspeito de MQTT'), o Rule 
+Agent deve:
+
+❯ 1. Gerar múltiplas regras cobrindo os casos possíveis
+     Ex: gera uma regra para flood, outra para bruteforce, outra para LWT abuse. Cobre a 
+     ambiguíade com abrangência. Mais regras = mais chances de FP.
+  2. Escolher a interpretação mais ampla e gerar uma regra genérica
+     Gera uma regra que captura o padrão mais comum do protocolo. Mais simples, mais risco de
+      miss.
+  3. Registrar a ambiguidade no campo diagnosis e gerar a regra mais conservadora
+     Produz uma regra defensiva e documenta no diagnosis por que a intenção foi interpretada
+     de uma forma específica. Permite rastreamento de decisões do agente.
+
+<!-------------->
+❯ 1. Gerar múltiplas regras cobrindo os casos possíveis
+     Ex: gera uma regra para flood, outra para bruteforce, outra para LWT abuse. Cobre a 
+     ambiguíade com abrangência. Mais regras = mais chances de FP.
+
+<!-------------->
+←  ☒ Rule Agent ambiguidade  ☐ Campo msg da regra  ✔ Submit  →
+
+O Rule Agent deve incluir o campo msg da regra Snort com a intenção do operador ou com uma 
+descrição técnica do padrão detectado?
+
+❯ 1. Intent do operador (ex: msg:"BLOCK MQTT FLOOD FROM OPERATOR";)
+     Diretamente rastreavél: qualquer alerta no IDS remete à intenção original.
+  2. Descrição técnica (ex: msg:"MQTT PUBLISH flood detected";)
+     Mais legível para quem lê os logs do IDS sem conhecer o experimento.
+  3. Type something.
+
+<!-------------->
+❯ 1. Intent do operador (ex: msg:"BLOCK MQTT FLOOD FROM OPERATOR";)
+     Diretamente rastreavél: qualquer alerta no IDS remete à intenção original.
+<!-------------->
+
+O sistema prompt do Rule Agent deve incluir exemplos de regras Snort bem formadas para 
+XRCE-DDS e MQTT?
+
+  1. Sim — exemplos hardcoded no prompt (1-2 por protocolo)
+     O LLM tem referência imediata de formato correto para os dois protocolos alvo. Aumenta 
+     qualidade da primeira geração. 
+❯ 2. Não — o LLM deve raciocinar sem exemplos específicos
+     Exemplos podem criar viés — o agente pode copiar a estrutura do exemplo mesmo quando não
+      é apropriada. Melhor para pesquisa: mede a capacidade real do LLM.
+<!-------------->
+←  ☐ SID placeholder  ☐ Campos Snort obrigatórios  ✔ Submit  →
+
+O Rule Agent deve escrever um SID placeholder na regra, ou qualquer SID que será sobrescrito?
+
+❯ 1. Placeholder fixo: sid:0; (Recomendado)
+     O prompt instrui o agente a sempre usar sid:0. O SID Manager substitui por um SID único 
+     antes da injeção. O agente não raciocina sobre SIDs.
+  2. Qualquer SID — sempre será sobrescrito de qualquer forma
+     O SID Manager substitui independentemente do que o LLM gerou. O prompt não precisa
+     mencionar SIDs.
+  3. Type something.
+<!-------------->
+←  ☒ SID placeholder  ☒ Campos Snort obrigatórios  ✔ Submit  →
+
+Review your answers
+  
+ ● O Rule Agent deve escrever um SID placeholder na regra, ou qualquer SID que será
+   sobrescrito?
+   → Placeholder fixo: sid:0; (Recomendado)
+ ● Além de msg, sid, rev, quais campos opcionais do Snort o Rule Agent deve ser instruido a
+   usar quando aplicável?
+   → flow (to_server, established, etc.), content / pcre, classtype / priority, considere 
+   sempre que estamos usando o Snort 3.9.12.0, então os campos e palavras reservadas devem 
+   ser condizentes com a versão do IDS. marquei apenas os que eu sei que existem na versão 
+   utilizada, mas você pode usar todas as palavras reservadas que forem úteis para a detecção
+    do ataque 
+ 
+Ready to submit your answers?
+        
+❯ 1. Submit answers
+  2. Cancel
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
+
+<!-------------->
 
 <!-------------->
 
 
-
-<!-------------->
-
-
-
-<!-------------->
-
-
-
-<!-------------->
-
-
-
-<!-------------->
 

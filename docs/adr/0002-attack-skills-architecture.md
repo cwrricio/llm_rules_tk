@@ -1,45 +1,71 @@
-# Attack Skills como Arquitetura para Simulação de Ataques
+# ADR 0002 — Descoberta de Ataques pela Estrutura Remota
 
-O Agente Atacante precisa simular diversos tipos de ataques usando diferentes ferramentas. Optamos por modelar cada tipo de ataque como uma **Skill** (no padrão Agno) em vez de manter um catálogo estático de ferramentas que o agente consulta.
+## Status
 
-## Problema
+Aceito.
 
-A arquitetura anterior usava um "Attack Tool Catalog" — um registro estático mapeando tipos de ataques para ferramentas específicas (ex: port scan → nmap, flood → hping3). O agente consultava esse catálogo de forma procedural. Essa abordagem tem limitações:
+## Contexto
 
-1. **Baixa flexibilidade**: Adicionar um novo tipo de ataque requer mudança no código do catálogo
-2. **Documentação espalhada**: A lógica de qual ferramenta usar e como invocá-la fica distribuída entre o agente e o catálogo
-3. **Escala limitada**: Conforme novos tipos de ataque são adicionados, o catálogo cresce sem estrutura clara
-4. **Alinhamento fraco com Agno**: O framework Agno foi escolhido precisamente para lidar com capacidades modulares via Skills, mas não estaríamos aproveitando esse recurso
+O host atacante ja possui uma arvore de ataques em `~/ataques/attackers-claude`, onde cada ataque e um diretorio com `README.md`, `Dockerfile`, `entrypoint.sh` e arquivos auxiliares. Exemplos:
 
-## Considered Options
+```text
+xrce-dds-udp-dos/
+├── README.md
+├── Dockerfile
+└── entrypoint.sh
+```
 
-- **Catálogo estático em código** — mantém registro de ferramentas e o agente seleciona via lógica procedural. Descartado: baixa escalabilidade e documentação espalhada.
-- **Skills como pacotes modulares** — cada tipo de ataque é um diretório auto-contido com SKILL.md (instruções), scripts/ (executáveis), e references/ (documentação). Agno carrega skills automaticamente via LocalSkills, agente raciocina via LLM sobre qual skill invocar. Escolhido.
-- **Microserviços separados** — cada tipo de ataque expõe uma REST API própria. Descartado: adiciona infraestrutura sem necessidade no escopo inicial; skills já resolvem modularidade.
+Manter uma lista fixa de ataques dentro do projeto duplica essa fonte de verdade e quebra quando um diretorio novo e adicionado no host atacante.
 
-## Consequences
+## Decisao
+
+Rules Farmer descobre ataques via SSH na Entidade 3:
+
+1. Procura subdiretorios de `testbed.attacker_attacks_root` com `entrypoint.sh`.
+2. Usa o nome do subdiretorio como `attack_id`.
+3. Le `README.md` para obter descricao e imagem Docker.
+4. Le `entrypoint.sh` para extrair argumentos obrigatorios da linha `usage: entrypoint.sh <...>`.
+5. Entrega esses ataques descobertos ao Attacker Agent no prompt de sistema.
+
+O Attacker Agent retorna:
+
+```python
+class AttackPlan(BaseModel):
+    attack_id: str
+    arguments: list[str]
+    evasion_rationale: str
+```
+
+O codigo deterministico valida se `attack_id` existe e se `arguments` tem a mesma quantidade esperada pelo `entrypoint.sh`.
+
+## Execucao
+
+O executor:
+
+1. Cria `/tmp/rules-farmer-attack-*` no host atacante.
+2. Inicia `tcpdump` no `testbed.attacker_capture_interface`.
+3. Roda `docker run --rm <docker_image> <arguments...>`.
+4. Encerra captura.
+5. Copia `attack.pcap` via SFTP para `results/{experiment_id}/pcaps/`.
+
+O `entrypoint.sh` e executado pelo Docker porque ele e o `ENTRYPOINT` das imagens de ataque.
+
+## Consequencias
 
 ### Positivas
 
-1. **Escalabilidade**: Adicionar um novo tipo de ataque é apenas criar um novo diretório com SKILL.md + scripts/main.py + references/. Não requer mudança no código do agente.
-2. **Documentação centralizada**: Cada skill é autodocumentada. SKILL.md descreve quando usar, references/ detalha argumentos, scripts/ implementa. Agente lê a documentação de referência antes de invocar.
-3. **Raciocínio do LLM**: O agente usa seu próprio raciocínio (via Agno) para escolher qual skill é apropriada baseado na intenção do operador e na regra gerada — em vez de seguir regras hardcoded.
-4. **Alinhamento com Agno**: Aproveita o sistema de skills nativo do Agno, reduzindo complexidade em como o agente descobrem e usam capacidades.
+- Adicionar ataque novo nao exige mudar codigo nem config.
+- A documentacao do ataque fica junto do ataque.
+- O agente enxerga exatamente a estrutura disponivel no host atacante no momento da execucao.
 
 ### Negativas
 
-1. **Inversão de controle**: O script main.py de cada skill recebe argumentos posicionais (não keywords). A ordem dos argumentos é contrato entre a documentação de referência e o script. Se a documentação e o script desincronizarem, o comportamento quebra. Mitigado: testes unitários para cada skill verificam que main.py processa argumentos na ordem documentada.
-2. **Invocação via bash**: O agente invoca skills executando `python3 scripts/main.py [args]` via bash. Isso é mais lento que uma função Python direta, mas é necessário para manter skills como pacotes isolados. Mitigado: skills são invocadas uma ou poucas vezes por experimento, overhead é negligenciável.
-3. **Erro de mapping**: Se a intenção do operador não mapear para nenhuma skill disponível, o agente deve ser capaz de gerar um erro claro. O sistema não pode invocar ferramentas indefinidamente. Mitigado: instruções do Agente Atacante pedem explicitamente que o agente consulte skills disponíveis antes de tentar executar algo; se não conseguir mapear, retorna erro estruturado (satisfaz US15).
+- README e `entrypoint.sh` precisam manter contratos legiveis.
+- A imagem Docker citada no README precisa existir no host atacante.
+- A ordem dos argumentos e contrato entre `entrypoint.sh` e `AttackPlan.arguments`.
 
-## Decisões Subordinadas
+## Alternativas Consideradas
 
-1. **Estrutura de diretórios**: Cada skill tem SKILL.md, scripts/, references/. Não há diretório tools/ separado — módulos auxiliares vivem em scripts/. (Mantém estrutura simples e alinhada com padrão Agno.)
-2. **Argumentos posicionais**: scripts/main.py recebe argumentos via sys.argv em ordem documentada (sem --flags). Garante invocação simples enquanto mantém documentação como fonte de verdade.
-3. **Retorno JSON**: Cada main.py retorna {"fired": bool, "pcap_path": str, "diagnosis": str, "ids_logs": str} na stdout. Agente faz parse e envia ao Orquestrador via REST.
-
-## Impacto no Roadmap
-
-- **Curto prazo**: Criar primeira skill de ataque (ex: attack-reconnaissance) como prototipo para validar a arquitetura.
-- **Médio prazo**: Expandir catálogo de skills conforme novos tipos de ataque são identificados em testes.
-- **Longo prazo**: Skills podem ser compartilhadas entre experimentos, reutilizadas, e até versionadas independentemente.
+- Lista fixa em `config.yaml`: descartada por duplicar a estrutura remota.
+- Scripts locais por ataque: descartado porque os ataques ja estao empacotados em Docker.
+- API no host atacante: descartada para evitar infraestrutura extra; SSH ja e necessario para operacao.

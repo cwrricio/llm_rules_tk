@@ -1,17 +1,21 @@
-# REST como protocolo de comunicação entre entidades
+# SSH como protocolo de comunicação entre entidades
 
-O sistema distribui seus componentes em até 4 entidades que podem rodar em hosts separados. Optamos por REST/HTTP como protocolo de comunicação entre elas em vez de chamadas diretas no mesmo processo ou filas de mensagens.
+O sistema distribui seus componentes em 4 entidades em hosts separados. Optamos por **SSH via paramiko** como protocolo de comunicação entre Entity 1 e as entidades remotas (Entity 2 e Entity 3), em vez de REST/HTTP com serviços dedicados.
 
-Chamadas diretas seriam mais simples, mas acoplariam todos os componentes ao mesmo host — inviabilizando o objetivo de distribuir o Agente Atacante na mesma rede que o alvo (Entidade 3 → Entidade 4). Filas de mensagens (Redis, RabbitMQ) foram descartadas por adicionarem infraestrutura sem benefício real no contexto de pesquisa: o loop é sequencial por natureza e não precisa de desacoplamento temporal.
+Esta decisão substitui a decisão original de REST/HTTP. A revisão ocorreu após clarificar o modelo operacional: Entity 2 e Entity 3 são máquinas de pesquisa pré-configuradas que já exigem acesso SSH para setup e administração. Implantar serviços FastAPI nessas máquinas adicionaria infraestrutura sem benefício real no contexto de pesquisa.
 
 ## Considered Options
 
-- **Chamadas diretas (mesmo processo)** — descartado: impede a topologia distribuída necessária para o Agente Atacante gerar tráfego real contra o alvo.
-- **Fila de mensagens** — descartado: adiciona infraestrutura (broker) sem justificativa; o loop já é sequencial e o Orquestrador coordena a ordem.
-- **REST/HTTP** — escolhido: suporta hosts separados, sem dependência de broker, e é consistente com a interface já exposta ao operador.
+- **REST/HTTP com FastAPI** — descartado (revisão da decisão original): exigia implantar e manter serviços FastAPI na Entity 2 (IDS) e na Entity 3 (Attacker). O argumento original era consistência com a interface do operador e suporte a hosts separados — ambos satisfeitos por SSH sem a carga de serviços adicionais.
+- **SSH via paramiko** — escolhido: Entity 1 usa `paramiko.SSHClient` para executar comandos remotos e `paramiko.SFTPClient` para transferir arquivos (SCP). Não requer serviços nas máquinas remotas além de chaves SSH configuradas. Mais controlável em testes: a conexão é configurada explicitamente via código, sem dependência de `~/.ssh/config`.
+- **Subprocess SSH** — descartado: dependeria do binário `ssh` no PATH e de configuração no `~/.ssh/config`. Mais frágil em ambientes de teste.
+- **Filas de mensagens** — descartado (mantém decisão original): adiciona infraestrutura sem benefício; o loop é sequencial por natureza.
 
 ## Consequences
 
-A Entidade 2 (IDS) precisa expor uma API REST própria para que a Entidade 1 possa injetar regras, validar sintaxe e ler alertas remotamente — em vez de acessar os arquivos do IDS diretamente. Isso adiciona um componente de serviço à Entidade 2, mas é necessário para manter a topologia distribuída viável.
-
-Não há autenticação entre os serviços. A decisão foi explícita: o sistema assume que opera em rede isolada, e a responsabilidade pelo isolamento é do operador (ver `system_overview.md` — Pressupostos e Restrições). Qualquer introdução futura de autenticação (ex: API keys) não exige mudança arquitetural — apenas adição de middleware nas APIs existentes.
+- **Entity 1** usa `paramiko.SSHClient` para executar comandos remotos na Entity 2 e Entity 3, e `paramiko.SFTPClient` para recuperar PCAPs da Entity 3 via SCP.
+- **Entity 2 (IDS)** não expõe REST API. O IDS Rule Validator, IDS Rule Injector e IDS Monitor executam comandos via SSH na Entity 2 (ex: escrever arquivo de regras, reiniciar container Docker do Snort, ler log de alertas).
+- **Entity 3 (Attacker)** não expõe REST API. O executor de ataques inicia containers Docker via SSH na Entity 3 e recupera PCAPs via SCP.
+- A **Orchestrator REST API** (`POST /experiments`, `GET /experiments/{id}`) permanece como FastAPI na Entity 1 — é a interface do operador e não é afetada por esta decisão.
+- **Autenticação**: conexões SSH usam chaves públicas. O operador deve configurar as chaves antes de iniciar o sistema.
+- **IDS Management API e Attacker API do PRD**: esses serviços descritos no PRD original não existem na implementação. As abstrações (IDS Rule Validator, IDS Rule Injector, IDS Monitor, executor de ataques) são implementadas diretamente com SSH.
