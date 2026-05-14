@@ -1,7 +1,11 @@
 from rules_farmer.tools.attack_tools import (
     make_execute_attack,
+    make_list_attack_files,
     make_list_available_attacks,
+    make_modify_attack_file,
     make_read_attack_definition,
+    make_read_attack_source_file,
+    make_rebuild_attack_image,
 )
 from rules_farmer.tools.inter_agent_tools import make_trigger_attacker
 from rules_farmer.tools.monitor_tools import make_check_alert_fired
@@ -18,8 +22,12 @@ __all__ = [
     "make_check_alert_fired",
     "make_deploy_rule",
     "make_execute_attack",
+    "make_list_attack_files",
     "make_list_available_attacks",
+    "make_modify_attack_file",
     "make_read_attack_definition",
+    "make_read_attack_source_file",
+    "make_rebuild_attack_image",
     "make_record_iteration",
     "make_trigger_attacker",
     "make_validate_rule_syntax",

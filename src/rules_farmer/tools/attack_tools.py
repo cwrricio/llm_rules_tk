@@ -60,6 +60,111 @@ def make_read_attack_definition(attacks: dict[str, DiscoveredAttack]):
     return read_attack_definition
 
 
+def make_list_attack_files(executor: AttackExecutor, attacks: dict[str, DiscoveredAttack]):
+    @tool
+    def list_attack_files(attack_id: str) -> dict:
+        """List the files in the attack directory on the attacker host.
+
+        Call this before read_attack_source_file to discover the actual filenames
+        (e.g. attack_udp_dos.c, compile.sh, Dockerfile) — do NOT guess filenames.
+
+        Args:
+            attack_id: The attack identifier.
+
+        Returns:
+            {"attack_id", "files": [filename, ...]} or {"error": "..."}.
+        """
+        logger.debug("Tool list_attack_files called attack_id=%s", attack_id)
+        if attack_id not in attacks:
+            return {"error": f"unknown attack_id: {attack_id}"}
+        try:
+            files = executor.list_source_files(attack_id)
+        except Exception as exc:
+            return {"error": str(exc)}
+        return {"attack_id": attack_id, "files": files}
+
+    return list_attack_files
+
+
+def make_read_attack_source_file(executor: AttackExecutor, attacks: dict[str, DiscoveredAttack]):
+    @tool
+    def read_attack_source_file(attack_id: str, filename: str) -> dict:
+        """Read a source file from the attack directory on the attacker host.
+
+        Use this before modifying an attack file so you can see the current implementation.
+
+        Args:
+            attack_id: The attack identifier.
+            filename: Relative filename within the attack directory (e.g. "attack.c", "entrypoint.sh").
+
+        Returns:
+            {"attack_id", "filename", "content"} or {"error": "..."}.
+        """
+        logger.debug("Tool read_attack_source_file called attack_id=%s filename=%s", attack_id, filename)
+        if attack_id not in attacks:
+            return {"error": f"unknown attack_id: {attack_id}"}
+        try:
+            content = executor.read_source_file(attack_id, filename)
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+        return {"attack_id": attack_id, "filename": filename, "content": content}
+
+    return read_attack_source_file
+
+
+def make_modify_attack_file(executor: AttackExecutor, attacks: dict[str, DiscoveredAttack]):
+    @tool
+    def modify_attack_file(attack_id: str, filename: str, content: str) -> dict:
+        """Write new content to a source file in the attack directory on the attacker host.
+
+        Use this to implement a file-level evasion variant when argument mutation is structurally
+        impossible (e.g., only fixed destination arguments exist). After modifying one or more
+        files, call rebuild_attack_image before execute_attack.
+
+        Args:
+            attack_id: The attack identifier.
+            filename: Relative filename within the attack directory (e.g. "attack.c").
+            content: Complete new content for the file.
+
+        Returns:
+            {"attack_id", "filename", "bytes_written"} or {"error": "..."}.
+        """
+        logger.info("Tool modify_attack_file called attack_id=%s filename=%s", attack_id, filename)
+        if attack_id not in attacks:
+            return {"error": f"unknown attack_id: {attack_id}"}
+        try:
+            executor.write_source_file(attack_id, filename, content)
+        except Exception as exc:
+            logger.error("Tool modify_attack_file failed attack_id=%s error=%s", attack_id, exc)
+            return {"error": str(exc)}
+        return {"attack_id": attack_id, "filename": filename, "bytes_written": len(content.encode())}
+
+    return modify_attack_file
+
+
+def make_rebuild_attack_image(executor: AttackExecutor, attacks: dict[str, DiscoveredAttack]):
+    @tool
+    def rebuild_attack_image(attack_id: str) -> dict:
+        """Rebuild the Docker image for an attack after source files have been modified.
+
+        Call this after modify_attack_file and before execute_attack so the container picks up
+        the mutated source. Returns build output so you can confirm the build succeeded.
+
+        Args:
+            attack_id: The attack identifier.
+
+        Returns:
+            {"attack_id", "exit_code", "output"} or {"error": "..."}.
+        """
+        logger.info("Tool rebuild_attack_image called attack_id=%s", attack_id)
+        if attack_id not in attacks:
+            return {"error": f"unknown attack_id: {attack_id}"}
+        result = executor.rebuild_image(attack_id)
+        return {"attack_id": attack_id, **result}
+
+    return rebuild_attack_image
+
+
 def make_execute_attack(executor: AttackExecutor, attacks: dict[str, DiscoveredAttack]):
     @tool
     def execute_attack(attack_id: str, arguments: list[str]) -> dict:

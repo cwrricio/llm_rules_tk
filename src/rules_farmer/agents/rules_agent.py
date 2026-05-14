@@ -92,7 +92,7 @@ class RulesAgent:
                 loaders=[
                     LocalSkills(str(_SKILLS_ROOT / "rules")),
                     LocalSkills(str(_SKILLS_ROOT / "shared")),
-                    LocalSkills(str(_SKILLS_ROOT / "references")),
+                    LocalSkills(str(_SKILLS_ROOT / "attacks" / "evasion-variants" / "references")),
                 ]
             ),
             tools=[

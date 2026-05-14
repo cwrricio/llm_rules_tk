@@ -85,6 +85,42 @@ class AttackExecutor:
             container_stderr=container_stderr,
         )
 
+    def list_source_files(self, attack_id: str) -> list[str]:
+        attack = self.attacks[attack_id]
+        result = self.ssh_client.run_command(
+            f"ls {shlex.quote(attack.remote_path)}"
+        )
+        if result.exit_code != 0:
+            raise RuntimeError(f"Cannot list attack directory: {attack.remote_path}")
+        return [f for f in result.stdout.splitlines() if f.strip()]
+
+    def read_source_file(self, attack_id: str, filename: str) -> str:
+        attack = self.attacks[attack_id]
+        remote_path = f"{attack.remote_path}/{filename}"
+        result = self.ssh_client.run_command(f"cat {shlex.quote(remote_path)}")
+        if result.exit_code != 0:
+            raise FileNotFoundError(f"Remote file not found: {remote_path}")
+        logger.debug("Attack source file read attack_id=%s filename=%s", attack_id, filename)
+        return result.stdout
+
+    def write_source_file(self, attack_id: str, filename: str, content: str) -> None:
+        attack = self.attacks[attack_id]
+        remote_path = f"{attack.remote_path}/{filename}"
+        self.ssh_client.write_file(remote_path, content)
+        logger.info("Attack source file written attack_id=%s filename=%s", attack_id, filename)
+
+    def rebuild_image(self, attack_id: str) -> dict[str, Any]:
+        attack = self.attacks[attack_id]
+        cmd = f"docker build -t {shlex.quote(attack.docker_image)} {shlex.quote(attack.remote_path)} 2>&1"
+        logger.info("Docker build start attack_id=%s image=%s", attack_id, attack.docker_image)
+        result = self.ssh_client.run_command(cmd)
+        logger.info(
+            "Docker build done attack_id=%s exit_code=%s",
+            attack_id,
+            result.exit_code,
+        )
+        return {"exit_code": result.exit_code, "output": result.stdout[:2000]}
+
     def _create_remote_run_dir(self) -> str:
         logger.debug("Creating remote attack temp directory")
         result = self.ssh_client.run_command("mktemp -d /tmp/rules-farmer-attack-XXXXXX")

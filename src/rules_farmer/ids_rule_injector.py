@@ -43,6 +43,16 @@ class IDSRuleInjector:
         self._wait_until_running()
         logger.info("IDS injection finished container=%s", self.container_name)
 
+    def ensure_rules_file(self) -> None:
+        """Create the rules file if it does not already exist.
+
+        Snort loads the file via an include statement when validating candidate rules.
+        If the file is absent the first validation fails before any rule has been deployed.
+        """
+        rules_path = shlex.quote(self.rules_file_path)
+        self.ssh_client.run_command(f"test -f {rules_path} || touch {rules_path}")
+        logger.debug("IDS rules file ensured rules_file_path=%s", self.rules_file_path)
+
     def clear_rules(self) -> None:
         logger.info("Clearing generated IDS rules rules_file_path=%s", self.rules_file_path)
         self._write_rules("")

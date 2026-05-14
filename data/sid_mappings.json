@@ -3,5 +3,19 @@
   "9000002": "Detect XRCE-DDS UDP DoS against 172.17.0.2 port 8888",
   "9000003": "Detect XRCE-DDS UDP DoS",
   "9000004": "Detect XRCE-DDS UDP DoS",
-  "9000005": "Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888"
+  "9000005": "Detect XRCE-DDS UDP DoS",
+  "9000006": "Detect XRCE-DDS UDP DoS",
+  "9000007": "Detect XRCE-DDS UDP DoS",
+  "9000008": "Detect XRCE-DDS UDP DoS",
+  "9000009": "Detect XRCE-DDS UDP DoS",
+  "9000010": "Detect XRCE-DDS UDP DoS",
+  "9000011": "Detect XRCE-DDS UDP DoS",
+  "9000012": "Detect XRCE-DDS UDP DoS",
+  "9000013": "Detect XRCE-DDS UDP DoS",
+  "9000014": "Detect XRCE-DDS UDP DoS",
+  "9000015": "Detect XRCE-DDS UDP DoS",
+  "9000016": "Detect XRCE-DDS Time Desync",
+  "9000017": "Detect XRCE-DDS Time Desync",
+  "9000018": "Detect XRCE-DDS Time Desync",
+  "9000019": "Detect XRCE-DDS Time Desync"
 }

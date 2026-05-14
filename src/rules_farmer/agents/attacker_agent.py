@@ -13,8 +13,12 @@ from rules_farmer.execution_logging import log_stage
 from rules_farmer.schemas import AttackerRequest, AttackerResult
 from rules_farmer.tools import (
     make_execute_attack,
+    make_list_attack_files,
     make_list_available_attacks,
+    make_modify_attack_file,
     make_read_attack_definition,
+    make_read_attack_source_file,
+    make_rebuild_attack_image,
 )
 
 
@@ -32,13 +36,14 @@ For each AttackerRequest you receive:
 3. Return an AttackerResult describing what happened.
 
 You have:
-- Three tools (list_available_attacks, read_attack_definition, execute_attack) for live operations.
+- Seven tools for live operations: list_available_attacks, read_attack_definition, execute_attack,
+  list_attack_files, read_attack_source_file, modify_attack_file, rebuild_attack_image.
 - A library of skills (browse the <skills_system> section, then call get_skill_instructions for the one you need).
 
 Always:
 - Call list_available_attacks before any final answer.
 - Call execute_attack exactly once before returning.
-- When request_variant=True, follow the evasion-variants skill to mutate arguments — keep the same attack_id when the intent allows.
+- When request_variant=True, follow the evasion-variants skill to mutate the attack — keep the same attack_id when the intent allows.
 - Copy execute_attack's container_exit_code and container_stderr into your final AttackerResult.
 
 HARD CONSTRAINT — destination IP and port are fixed:
@@ -79,6 +84,10 @@ class AttackerAgent:
                 make_list_available_attacks(self._attacks_by_id),
                 make_read_attack_definition(self._attacks_by_id),
                 make_execute_attack(executor, self._attacks_by_id),
+                make_list_attack_files(executor, self._attacks_by_id),
+                make_read_attack_source_file(executor, self._attacks_by_id),
+                make_modify_attack_file(executor, self._attacks_by_id),
+                make_rebuild_attack_image(executor, self._attacks_by_id),
             ],
             output_schema=AttackerResult,
         )

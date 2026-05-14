@@ -77,6 +77,15 @@ class SSHClient:
             f"{self.max_attempts} attempts"
         ) from last_error
 
+    def write_file(self, remote_path: str, content: str) -> None:
+        sftp = self._client.open_sftp()
+        try:
+            with sftp.open(remote_path, "w") as f:
+                f.write(content)
+        finally:
+            sftp.close()
+        logger.debug("SSH file written remote_path=%s bytes=%s", remote_path, len(content.encode()))
+
     def run_command(self, command: str) -> CommandResult:
         logger.debug(
             "SSH command start host=%s command=%s",

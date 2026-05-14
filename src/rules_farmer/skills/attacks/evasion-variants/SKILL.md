@@ -14,27 +14,57 @@ When the Rules Agent has already deployed a rule that detected the previous atta
 
 ## Goal
 
-Stay within the operator intent (same protocol, same target, same attack class), but mutate one or more arguments so the deployed rule fails to match.
+Stay within the operator intent (same protocol, same target, same attack class), but mutate the attack so the deployed rule fails to match.
 
-## Mutation Strategies
+## Step 1 — Load the Attack-Specific Playbook
 
-See `references/evasion-patterns.md` for a catalogued list. Common levers:
+Before attempting any mutation, call:
 
-- **Rate**: drop below `detection_filter` thresholds; or burst above them.
+```
+get_skill_reference("<attack_id>", "refinamento.md")
+```
+
+This loads three things for the specific attack family:
+- **Detection hypotheses** — what each rule variant is likely detecting.
+- **Evasion catalogue** — three concrete mutation strategies per hypothesis (obfuscação / fragmentação-timing / context shifting).
+- **Adaptation algorithm** — maps the fired rule's detection mechanism to the correct mutation strategy.
+
+Use the adaptation algorithm to decide WHICH mutation to apply before choosing a level.
+
+## Step 2 — Choose a Mutation Level
+
+### Level 1: Argument Mutation (preferred)
+
+If the attack exposes non-destination parameters (rate, count, payload size, timing, source port, etc.), mutate those values.
+
+Common levers:
+- **Rate**: drop below `detection_filter` thresholds or burst above them.
 - **Source port**: rotate ephemeral ports.
 - **Payload size**: vary `dsize`-relevant lengths.
 - **Encoding**: change between binary/text/base64 if the attack accepts the choice.
 - **Timing**: introduce delays that defeat time-bucket detection_filters.
 
-## Process
+Set `evasion_rationale` to a one-line explanation of WHY this mutation should evade the rule, then call `execute_attack` with the new arguments.
 
-1. Read the previously fired rule (provided in the AttackerRequest) to identify what the rule matches on.
-2. Pick the mutation strategy that defeats the matcher without violating the intent.
-3. Set `evasion_rationale` to a one-line explanation of WHY this mutation should evade the rule.
-4. Call `execute_attack` with the new arguments.
-5. The Rules Agent will check whether the rule fires. If it does, the variant failed (the attacker is supposed to evade). If it does not fire, the variant succeeded and the Rules Agent will refine its rule.
+### Level 2: File + Rebuild Mutation (when Level 1 is structurally impossible)
+
+When the attack exposes **only destination-fixed arguments** (target + port) and no other parameters exist, argument mutation cannot produce a variant. You MUST modify the attack source files on the attacker host and rebuild the Docker image.
+
+**Steps:**
+
+1. Call `list_attack_files(attack_id)` to discover the actual filenames in the attack directory — NEVER guess. Then call `read_attack_source_file(attack_id, filename)` to inspect the relevant source file (typically the `.c` or `.py` file, not the Dockerfile or entrypoint).
+2. Pick the mutation strategy from the playbook loaded in Step 1 (obfuscação / fragmentação-timing / context shifting) that defeats the fired rule's detection mechanism.
+3. Produce the mutated file content implementing that strategy.
+4. Call `modify_attack_file(attack_id, filename, new_content)` to write it to the attacker host.
+5. Call `rebuild_attack_image(attack_id)` to rebuild the Docker image. Verify `exit_code == 0` before proceeding.
+6. Call `execute_attack(attack_id, arguments)` as usual — the container now runs the mutated code.
+
+Set `evasion_rationale` to a one-line explanation of the strategy applied and the rule mechanism it targets.
 
 ## Do NOT
 
 - Switch `attack_id` between variants of the same intent — same intent must use the same attack class.
-- Violate the `required_arguments` schema — mutate VALUES, not the argument list shape.
+- Violate the `required_arguments` schema — mutate VALUES (Level 1) or internal source logic (Level 2), not the argument list shape.
+- Mutate `fixed_destination_ip` or `fixed_destination_port` across variants.
+- Call `execute_attack` without rebuilding first if you modified source files.
+- Skip loading `refinamento.md` — without the adaptation algorithm you will repeat defeated strategies.
