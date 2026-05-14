@@ -55,7 +55,7 @@ class SIDManager:
 
     def _load_counter(self) -> int:
         try:
-            data = json.loads(self.counter_path.read_text(encoding="utf-8"))
+            data = json.loads(_read_text_tolerant(self.counter_path))
             logger.debug("Loaded SID counter path=%s counter=%s", self.counter_path, data["counter"])
             return int(data["counter"])
         except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
@@ -65,9 +65,27 @@ class SIDManager:
     def _load_mappings(self) -> dict[str, str]:
         if not self.mapping_path.exists():
             return {}
-        return json.loads(self.mapping_path.read_text(encoding="utf-8"))
+        return json.loads(_read_text_tolerant(self.mapping_path))
 
     def _write_json(self, path: Path, data: dict[str, object]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         logger.debug("Writing SID JSON path=%s", path)
         path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _read_text_tolerant(path: Path) -> str:
+    """Read a small JSON file produced by a human, accepting common Windows shell encodings.
+
+    PowerShell 5.1's ``>`` redirect writes UTF-16 LE with BOM by default — when a user runs
+    ``echo '{"counter": 9000000}' > data/sid_counter.json`` on Windows, the resulting file is
+    UTF-16, not UTF-8. We detect the BOM and decode accordingly so the program does not crash
+    with a confusing UnicodeDecodeError on startup.
+    """
+    raw = path.read_bytes()
+    if raw.startswith(b"\xff\xfe"):
+        return raw.decode("utf-16-le")[1:]  # strip the BOM after decoding
+    if raw.startswith(b"\xfe\xff"):
+        return raw.decode("utf-16-be")[1:]
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw.decode("utf-8-sig")
+    return raw.decode("utf-8")

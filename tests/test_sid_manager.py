@@ -39,6 +39,33 @@ def test_missing_or_corrupted_counter_raises_recovery_error(
     )
 
 
+def test_load_counter_accepts_utf16_le_with_bom_from_powershell(tmp_path):
+    """PowerShell 5.1's ``>`` redirect writes UTF-16 LE with BOM. SIDManager must accept it
+    instead of crashing the whole experiment at startup."""
+    counter_path = tmp_path / "sid_counter.json"
+    mapping_path = tmp_path / "sid_mappings.json"
+    counter_path.write_bytes('{"counter": 9000000}\r\n'.encode("utf-16-le").rjust(0))
+    # Add the BOM manually because encode('utf-16-le') does not include it.
+    counter_path.write_bytes(b"\xff\xfe" + '{"counter": 9000000}\r\n'.encode("utf-16-le"))
+
+    manager = SIDManager(counter_path=counter_path, mapping_path=mapping_path)
+    sid = manager.assign_sid("Detect MQTT")
+
+    assert sid == 9000001
+    # After the first write, the file is normalized to UTF-8.
+    assert counter_path.read_bytes().startswith(b"{")
+
+
+def test_load_counter_accepts_utf8_with_bom(tmp_path):
+    """Editors on Windows sometimes save with UTF-8 BOM. Tolerate it."""
+    counter_path = tmp_path / "sid_counter.json"
+    mapping_path = tmp_path / "sid_mappings.json"
+    counter_path.write_bytes(b"\xef\xbb\xbf" + b'{"counter": 9000000}\n')
+
+    manager = SIDManager(counter_path=counter_path, mapping_path=mapping_path)
+    assert manager.assign_sid("Detect X") == 9000001
+
+
 def test_assign_sids_replaces_llm_sids_with_unique_system_sids(tmp_path):
     counter_path = tmp_path / "sid_counter.json"
     mapping_path = tmp_path / "sid_mappings.json"

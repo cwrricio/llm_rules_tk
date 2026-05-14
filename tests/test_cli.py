@@ -48,8 +48,8 @@ def test_terminal_prompt_waits_for_textual_intent_and_runs_experiment():
     assert output == [
         "Running experiment for: Detect XRCE-DDS UDP DoS",
         "Status: converged",
-        "JSON: /tmp/results/exp-1/experiment.json",
-        "CSV: /tmp/results/exp-1/metrics.csv",
+        f"JSON: {Path('/tmp/results/exp-1/experiment.json')}",
+        f"CSV: {Path('/tmp/results/exp-1/metrics.csv')}",
     ]
 
 

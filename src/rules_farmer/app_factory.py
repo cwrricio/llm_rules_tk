@@ -2,23 +2,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 from fastapi import FastAPI
 
+from rules_farmer.agents import AttackerAgent, RulesAgent
 from rules_farmer.api import create_app
 from rules_farmer.attack_discovery import RemoteAttackDiscovery
 from rules_farmer.attack_executor import AttackExecutor
-from rules_farmer.attacker_agent import AttackerAgent
-from rules_farmer.config import load_config
+from rules_farmer.config import AgentModelConfig, load_config
 from rules_farmer.execution_logging import configure_execution_logging, log_stage
 from rules_farmer.experiment_recorder import ExperimentIDFactory, ExperimentRecorder
 from rules_farmer.ids_monitor import IDSMonitor
 from rules_farmer.ids_rule_injector import IDSRuleInjector
 from rules_farmer.ids_rule_validator import SnortRuleValidator
-from rules_farmer.llm_client import LLMClientConfig, StructuredLLMClient
 from rules_farmer.orchestrator import Orchestrator
-from rules_farmer.rule_agent import RuleAgent
 from rules_farmer.sid_manager import SIDManager
 from rules_farmer.ssh import SSHClient
 
@@ -89,25 +86,6 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
     )
     recorder = ExperimentRecorder(output_dir=config.testbed.results_output_dir)
 
-    rule_llm = StructuredLLMClient(
-        LLMClientConfig(
-            provider=config.llm.rule_agent.provider,
-            model=config.llm.rule_agent.model,
-            temperature=config.llm.rule_agent.temperature,
-            max_tokens=config.llm.rule_agent.max_tokens,
-            api_key=getattr(config.api_keys, config.llm.rule_agent.provider, None),
-        )
-    )
-    attacker_llm = StructuredLLMClient(
-        LLMClientConfig(
-            provider=config.llm.attacker_agent.provider,
-            model=config.llm.attacker_agent.model,
-            temperature=config.llm.attacker_agent.temperature,
-            max_tokens=config.llm.attacker_agent.max_tokens,
-            api_key=getattr(config.api_keys, config.llm.attacker_agent.provider, None),
-        )
-    )
-
     log_stage("DESCOBRINDO ATAQUES DISPONIVEIS")
     discovered_attacks = RemoteAttackDiscovery(
         ssh_client=attacker_ssh,
@@ -120,35 +98,32 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
             f"Check testbed.attacker_attacks_root={config.testbed.attacker_attacks_root!r}."
         )
 
-    attacker_agent = AttackerAgent(
-        llm_client=attacker_llm,
-        attacks=discovered_attacks,
-        max_plan_retries=config.attack_plan_validation.max_retries,
-    )
-
-    pcap_output_dir = Path(config.testbed.results_output_dir) / "pcaps"
     attack_executor = AttackExecutor(
         ssh_client=attacker_ssh,
         attacks={attack.attack_id: attack for attack in discovered_attacks},
-        pcap_output_dir=pcap_output_dir,
-        capture_interface=config.testbed.attacker_capture_interface,
+    )
+
+    attacker_agent = AttackerAgent(
+        model=_create_agno_model(config.llm.attacker_agent),
+        attacks=discovered_attacks,
+        executor=attack_executor,
+    )
+    rules_agent = RulesAgent(
+        model=_create_agno_model(config.llm.rule_agent),
+        validator=validator,
+        sid_manager=sid_manager,
+        injector=injector,
+        monitor=monitor,
+        attacker_agent=attacker_agent,
+        recorder=recorder,
     )
 
     experiment_id_factory = ExperimentIDFactory(config.testbed.experiment_counter_file_path)
 
     orchestrator = Orchestrator(
-        rule_agent=RuleAgent(
-            llm_client=rule_llm,
-            provider=config.llm.rule_agent.provider,
-            model=config.llm.rule_agent.model,
-        ),
-        validator=validator,
-        sid_manager=sid_manager,
-        injector=injector,
-        attacker_agent=attacker_agent,
-        attack_executor=attack_executor,
-        monitor=monitor,
+        rules_agent=rules_agent,
         recorder=recorder,
+        attack_destinations=config.attack_destinations,
         experiment_id_factory=experiment_id_factory,
     )
 
@@ -164,6 +139,35 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         default_variant_count=config.experiment_defaults.variant_count,
         orchestrator_host=config.testbed.orchestrator_host,
         orchestrator_port=config.testbed.orchestrator_port,
+    )
+
+
+def _create_agno_model(cfg: AgentModelConfig):
+    """Instantiate the right agno model class from the per-agent provider configuration.
+
+    Agno reads API keys from env vars (ANTHROPIC_API_KEY / OPENAI_API_KEY / GROQ_API_KEY /
+    DEEPSEEK_API_KEY) — config.load_config() ensures the .env file has been merged into the
+    process environment before this is called.
+    """
+    provider = cfg.provider.lower()
+    if provider == "anthropic":
+        from agno.models.anthropic import Claude
+
+        return Claude(id=cfg.model, temperature=cfg.temperature, max_tokens=cfg.max_tokens)
+    if provider == "openai":
+        from agno.models.openai import OpenAIChat
+
+        return OpenAIChat(id=cfg.model, temperature=cfg.temperature, max_tokens=cfg.max_tokens)
+    if provider == "groq":
+        from agno.models.groq import Groq
+
+        return Groq(id=cfg.model, temperature=cfg.temperature, max_tokens=cfg.max_tokens)
+    if provider == "deepseek":
+        from agno.models.deepseek import DeepSeek
+
+        return DeepSeek(id=cfg.model, temperature=cfg.temperature, max_tokens=cfg.max_tokens)
+    raise ValueError(
+        f"Unsupported llm provider: {cfg.provider!r}. Expected anthropic / openai / groq / deepseek."
     )
 
 

@@ -4,13 +4,14 @@ import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
 from typing import Callable
 
+from rules_farmer.agents import RulesAgent
+from rules_farmer.config import AttackDestinationsConfig
 from rules_farmer.experiment_recorder import ExperimentRecorder
 from rules_farmer.execution_logging import log_stage
-from rules_farmer.llm_client import LLMClientError
-from rules_farmer.schemas import AttackerRequest, FeedbackPayload, VariantResult
+from rules_farmer.intent_preprocessor import FixedDestination, resolve_fixed_destination
+from rules_farmer.schemas import IterationResult
 
 
 logger = logging.getLogger(__name__)
@@ -27,24 +28,14 @@ class ExperimentRunResult:
 class Orchestrator:
     def __init__(
         self,
-        rule_agent,
-        validator,
-        sid_manager,
-        injector,
-        attacker_agent,
-        attack_executor,
-        monitor,
+        rules_agent: RulesAgent,
         recorder: ExperimentRecorder,
+        attack_destinations: AttackDestinationsConfig,
         experiment_id_factory: Callable[[], str] | None = None,
     ):
-        self.rule_agent = rule_agent
-        self.validator = validator
-        self.sid_manager = sid_manager
-        self.injector = injector
-        self.attacker_agent = attacker_agent
-        self.attack_executor = attack_executor
-        self.monitor = monitor
+        self.rules_agent = rules_agent
         self.recorder = recorder
+        self.attack_destinations = attack_destinations
         self.experiment_id_factory = experiment_id_factory or (lambda: str(uuid.uuid4()))
 
     def run_experiment(
@@ -55,329 +46,69 @@ class Orchestrator:
         experiment_id: str | None = None,
     ) -> ExperimentRunResult:
         experiment_id = experiment_id or self.experiment_id_factory()
+        fixed = resolve_fixed_destination(intent, self.attack_destinations)
         log_stage("EXPERIMENTO INICIADO")
         logger.info(
-            "Experiment started experiment_id=%s max_iterations=%s variant_count=%s intent=%r",
+            "Experiment started experiment_id=%s max_iterations=%s variant_count=%s intent=%r fixed_destination=%s",
             experiment_id,
             max_iterations,
             variant_count,
             intent,
+            _fmt_destination(fixed),
         )
         self.recorder.initialize_experiment(experiment_id, intent)
-        feedback = None
-        previous_rules = None
-        variant_history: list[VariantResult] = []
 
+        previous_iterations: list[IterationResult] = []
         try:
-            return self._run_feedback_loop(
-                experiment_id=experiment_id,
-                intent=intent,
-                max_iterations=max_iterations,
-                variant_count=variant_count,
-                feedback=feedback,
-                previous_rules=previous_rules,
-                variant_history=variant_history,
-            )
+            for variant_index in range(variant_count + 1):
+                label = "base" if variant_index == 0 else f"variant_{variant_index}"
+                log_stage(f"AGORA ESTA RODANDO {label.upper()}")
+                logger.info(
+                    "Variant cycle started experiment_id=%s variant_index=%s label=%s",
+                    experiment_id,
+                    variant_index,
+                    label,
+                )
+                result = self.rules_agent.run_iteration(
+                    intent=intent,
+                    variant_label=label,
+                    previous_iterations=previous_iterations,
+                    max_internal_attempts=max_iterations,
+                    experiment_id=experiment_id,
+                    fixed_destination_ip=fixed.ip if fixed else None,
+                    fixed_destination_port=fixed.port if fixed else None,
+                )
+                previous_iterations.append(result)
+                if not result.fired:
+                    log_stage(f"VARIANTE {label.upper()} NAO DETECTADA - EXPERIMENTO FALHOU")
+                    return self._finalize(experiment_id, converged=False, status="failed")
+
+            log_stage("EXPERIMENTO CONVERGIU")
+            return self._finalize(experiment_id, converged=True, status="converged")
         except Exception as exc:
             log_stage("EXPERIMENTO PAROU COM ERRO")
             logger.exception("Experiment stopped due to error experiment_id=%s", experiment_id)
             self.recorder.finalize_error(experiment_id, exc)
             raise
 
-    def _run_feedback_loop(
-        self,
-        experiment_id: str,
-        intent: str,
-        max_iterations: int,
-        variant_count: int,
-        feedback: FeedbackPayload | None,
-        previous_rules: list[str] | None,
-        variant_history: list[VariantResult],
-    ) -> ExperimentRunResult:
-        for iteration in range(1, max_iterations + 1):
-            log_stage(f"ITERACAO {iteration} DE {max_iterations}")
-            logger.debug("Iteration started experiment_id=%s iteration=%s", experiment_id, iteration)
-            log_stage("AGORA ESTA GERANDO A REGRA")
-            logger.debug("Generating IDS rule experiment_id=%s iteration=%s", experiment_id, iteration)
-            try:
-                rule_output = self.rule_agent.run(
-                    intent=intent,
-                    previous_rules=previous_rules,
-                    feedback=feedback,
-                )
-            except LLMClientError as exc:
-                logger.warning(
-                    "Rule generation LLM error, skipping iteration experiment_id=%s iteration=%s error=%s",
-                    experiment_id,
-                    iteration,
-                    exc,
-                )
-                continue
-            previous_rules = rule_output.rules
-            logger.info(
-                "Rule generation finished experiment_id=%s iteration=%s rule_count=%s diagnosis_present=%s",
-                experiment_id,
-                iteration,
-                len(rule_output.rules),
-                rule_output.diagnosis is not None,
-            )
-            for rule_index, rule in enumerate(rule_output.rules, start=1):
-                logger.info(
-                    "Generated rule experiment_id=%s iteration=%s rule_index=%s/%s rule=%s",
-                    experiment_id,
-                    iteration,
-                    rule_index,
-                    len(rule_output.rules),
-                    rule,
-                )
-            if rule_output.diagnosis:
-                logger.info(
-                    "Rule agent diagnosis experiment_id=%s iteration=%s diagnosis=%s",
-                    experiment_id,
-                    iteration,
-                    rule_output.diagnosis,
-                )
-
-            validation_error = self._validate_rules(rule_output.rules)
-            if validation_error is not None:
-                logger.warning(
-                    "Rule validation failed experiment_id=%s iteration=%s validation_error=%s",
-                    experiment_id,
-                    iteration,
-                    validation_error,
-                )
-                feedback = FeedbackPayload(
-                    pcap_summary="",
-                    ids_logs="",
-                    evasion_rationale="Rule syntax validation failed",
-                    validation_error=validation_error,
-                )
-                continue
-
-            assigned_rules = self.sid_manager.assign_sids(intent, rule_output.rules)
-            logger.info(
-                "SID assignment completed experiment_id=%s iteration=%s sids=%s",
-                experiment_id,
-                iteration,
-                [item.sid for item in assigned_rules],
-            )
-            log_stage("AGORA ESTA INJETANDO A REGRA NO IDS")
-            logger.debug("Injecting IDS rule experiment_id=%s iteration=%s", experiment_id, iteration)
-            self.injector.inject([item.rule for item in assigned_rules])
-            logger.info("Rule injection finished experiment_id=%s iteration=%s", experiment_id, iteration)
-            active_rule = assigned_rules[0]
-
-            base_fired = self._run_attack_execution(
-                experiment_id=experiment_id,
-                iteration=iteration,
-                execution_type="base",
-                intent=intent,
-                rule=active_rule.rule,
-                sid=active_rule.sid,
-                variant_history=variant_history,
-            )
-            if not base_fired.fired:
-                logger.info(
-                    "Base attack did not fire experiment_id=%s iteration=%s",
-                    experiment_id,
-                    iteration,
-                )
-                feedback = base_fired.feedback
-                continue
-
-            converged = True
-            for variant_index in range(1, variant_count + 1):
-                log_stage(f"AGORA ESTA RODANDO VARIANTE {variant_index} DE {variant_count}")
-                logger.debug(
-                    "Variant attack started experiment_id=%s iteration=%s variant_index=%s/%s",
-                    experiment_id,
-                    iteration,
-                    variant_index,
-                    variant_count,
-                )
-                variant_fired = self._run_attack_execution(
-                    experiment_id=experiment_id,
-                    iteration=iteration,
-                    execution_type="variant",
-                    intent=intent,
-                    rule=active_rule.rule,
-                    sid=active_rule.sid,
-                    variant_history=variant_history,
-                )
-                if not variant_fired.fired:
-                    logger.info(
-                        "Variant evaded rule experiment_id=%s iteration=%s variant_index=%s",
-                        experiment_id,
-                        iteration,
-                        variant_index,
-                    )
-                    feedback = variant_fired.feedback
-                    converged = False
-                    break
-
-            if converged:
-                log_stage("EXPERIMENTO CONVERGIU")
-                artifacts = self.recorder.finalize(experiment_id, converged=True)
-                logger.info(
-                    "Experiment converged experiment_id=%s json_path=%s csv_path=%s",
-                    experiment_id,
-                    artifacts.json_path,
-                    artifacts.csv_path,
-                )
-                return ExperimentRunResult(
-                    status="converged",
-                    experiment_id=experiment_id,
-                    json_path=artifacts.json_path,
-                    csv_path=artifacts.csv_path,
-                )
-
-        log_stage("EXPERIMENTO FALHOU")
-        artifacts = self.recorder.finalize(experiment_id, converged=False)
+    def _finalize(self, experiment_id: str, converged: bool, status: str) -> ExperimentRunResult:
+        artifacts = self.recorder.finalize(experiment_id, converged=converged)
         logger.info(
-            "Experiment failed experiment_id=%s json_path=%s csv_path=%s",
+            "Experiment finalized experiment_id=%s status=%s json_path=%s csv_path=%s",
             experiment_id,
+            status,
             artifacts.json_path,
             artifacts.csv_path,
         )
         return ExperimentRunResult(
-            status="failed",
+            status=status,
             experiment_id=experiment_id,
             json_path=artifacts.json_path,
             csv_path=artifacts.csv_path,
         )
 
-    def _validate_rules(self, rules: list[str]) -> str | None:
-        log_stage("AGORA ESTA VALIDANDO A REGRA")
-        for index, rule in enumerate(rules, start=1):
-            logger.debug("Validating rule %s/%s", index, len(rules))
-            result = self.validator.validate(rule)
-            if not result.valid:
-                logger.warning(
-                    "Rule validation rejected rule_index=%s/%s error=%s",
-                    index,
-                    len(rules),
-                    result.error,
-                )
-                return result.error
-            logger.debug("Rule validation accepted rule_index=%s/%s", index, len(rules))
-        logger.info("Rule validation accepted rule_count=%s", len(rules))
-        return None
 
-    def _run_attack_execution(
-        self,
-        experiment_id: str,
-        iteration: int,
-        execution_type: str,
-        intent: str,
-        rule: str,
-        sid: int,
-        variant_history: list[VariantResult],
-    ) -> "_AttackOutcome":
-        log_stage("AGORA ESTA PLANEJANDO O ATAQUE")
-        logger.debug(
-            "Attack planning started experiment_id=%s iteration=%s execution_type=%s history_count=%s",
-            experiment_id,
-            iteration,
-            execution_type,
-            len(variant_history),
-        )
-        plan = self.attacker_agent.run(
-            AttackerRequest(
-                intent=intent,
-                rule=rule,
-                sid=sid,
-                variant_history=variant_history,
-            )
-        )
-        logger.info(
-            "Attack planning finished experiment_id=%s iteration=%s execution_type=%s attack_id=%s arguments=%s",
-            experiment_id,
-            iteration,
-            execution_type,
-            plan.attack_id,
-            plan.arguments,
-        )
-        logger.info(
-            "Attack evasion rationale experiment_id=%s iteration=%s execution_type=%s rationale=%s",
-            experiment_id,
-            iteration,
-            execution_type,
-            plan.evasion_rationale,
-        )
-        log_stage("AGORA ESTA RODANDO O ATACANTE")
-        logger.debug(
-            "Running attacker experiment_id=%s iteration=%s execution_type=%s attack_id=%s",
-            experiment_id,
-            iteration,
-            execution_type,
-            plan.attack_id,
-        )
-        execution = self.attack_executor.execute(plan.attack_id, plan.arguments)
-        logger.info(
-            "Attack execution finished experiment_id=%s iteration=%s execution_type=%s attack_id=%s exit_code=%s pcap=%s",
-            experiment_id,
-            iteration,
-            execution_type,
-            plan.attack_id,
-            execution.exit_code,
-            execution.pcap_local_path,
-        )
-        pcap_dest_dir = Path(self.recorder.output_dir) / experiment_id / "pcaps"
-        pcap_dest_dir.mkdir(parents=True, exist_ok=True)
-        pcap_dest_path = pcap_dest_dir / execution.pcap_local_path.name
-        try:
-            shutil.copy2(execution.pcap_local_path, pcap_dest_path)
-            logger.debug("PCAP copied to experiment directory path=%s", pcap_dest_path)
-        except FileNotFoundError:
-            # Best-effort: if the executor didn't produce a local PCAP, still record execution.
-            logger.warning(
-                "PCAP copy skipped because source was missing source=%s destination=%s",
-                execution.pcap_local_path,
-                pcap_dest_path,
-            )
-            pass
-        log_stage("AGORA ESTA VERIFICANDO ALERTAS DO IDS")
-        logger.debug("Checking IDS alerts sid=%s", sid)
-        fired = self.monitor.check_fired(sid)
-        logger.info(
-            "IDS monitor check finished sid=%s fired=%s",
-            sid,
-            fired,
-        )
-        variant_history.append(
-            VariantResult(attack_id=plan.attack_id, arguments=plan.arguments, fired=fired)
-        )
-        self.recorder.record_execution(
-            experiment_id=experiment_id,
-            iteration=iteration,
-            execution_type=execution_type,
-            attack_id=plan.attack_id,
-            arguments=plan.arguments,
-            fired=fired,
-            evasion_rationale=plan.evasion_rationale,
-            pcap_filename=execution.pcap_local_path.name,
-            rule=rule,
-            container_exit_code=execution.container_exit_code,
-            container_stderr=execution.container_stderr,
-        )
-        feedback = None
-        if not fired:
-            feedback = FeedbackPayload(
-                pcap_summary=execution.pcap_summary,
-                ids_logs="",
-                evasion_rationale=plan.evasion_rationale,
-            )
-            logger.info(
-                "Attack did not fire, building feedback experiment_id=%s iteration=%s execution_type=%s pcap_summary_bytes=%s",
-                experiment_id,
-                iteration,
-                execution_type,
-                len(execution.pcap_summary.encode()),
-            )
-        return _AttackOutcome(fired=fired, feedback=feedback)
-
-
-@dataclass(frozen=True)
-class _AttackOutcome:
-    fired: bool
-    feedback: FeedbackPayload | None
+def _fmt_destination(fixed: FixedDestination | None) -> str:
+    if fixed is None:
+        return "unresolved"
+    return f"{fixed.family}://{fixed.ip}:{fixed.port}"

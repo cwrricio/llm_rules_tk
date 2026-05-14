@@ -6,3 +6,4 @@ __pycache__/
 *.pcap
 data/sid_counter.json
 results/
+.claude

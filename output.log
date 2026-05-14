@@ -1,50 +1,371 @@
-2026-05-14 12:23:07 INFO rules_farmer: Execution logging started log_path=output.log
-2026-05-14 12:23:07 <------------- CARREGANDO CONFIGURACAO ------------->
-2026-05-14 12:23:16 <------------- INTENCAO RECEBIDA ------------->
-2026-05-14 12:23:16 <------------- MONTANDO RUNTIME ------------->
-2026-05-14 12:23:16 <------------- MONTANDO COMPONENTES ------------->
-2026-05-14 12:23:16 <------------- CONECTANDO NO IDS ------------->
-2026-05-14 12:23:16 INFO rules_farmer.app_factory: Connecting to IDS over SSH host=192.168.137.1 user=gtiotedu
-2026-05-14 12:23:16 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.1 user=gtiotedu attempt=1/3
-2026-05-14 12:23:16 INFO rules_farmer.ssh: SSH connected host=192.168.137.1 user=gtiotedu
-2026-05-14 12:23:16 <------------- CONECTANDO NO ATACANTE ------------->
-2026-05-14 12:23:16 INFO rules_farmer.app_factory: Connecting to attacker over SSH host=192.168.137.94 user=unipampa
-2026-05-14 12:23:16 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.94 user=unipampa attempt=1/3
-2026-05-14 12:23:16 INFO rules_farmer.ssh: SSH connected host=192.168.137.94 user=unipampa
-2026-05-14 12:23:16 <------------- DESCOBRINDO ATAQUES DISPONIVEIS ------------->
-2026-05-14 12:23:16 INFO rules_farmer.attack_discovery: Attack discovery started attacks_root=/home/unipampa/ataques-artigo
-2026-05-14 12:23:17 INFO rules_farmer.attack_discovery: Attack directories found count=10
-2026-05-14 12:23:18 INFO rules_farmer.attack_discovery: Attack discovery finished count=10
-2026-05-14 12:23:18 INFO rules_farmer.app_factory: Discovered attacks count=10
-2026-05-14 12:23:18 <------------- RUNTIME PRONTO ------------->
-2026-05-14 12:23:18 <------------- INICIANDO EXPERIMENTO ------------->
-2026-05-14 12:23:18 INFO rules_farmer.cli: Running experiment for: Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888
-2026-05-14 12:23:18 <------------- EXPERIMENTO INICIADO ------------->
-2026-05-14 12:23:18 INFO rules_farmer.orchestrator: Experiment started experiment_id=0006 max_iterations=10 variant_count=3 intent='Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888'
-2026-05-14 12:23:18 INFO rules_farmer.experiment_recorder: Experiment record initialized experiment_id=0006 dir=results/0006
-2026-05-14 12:23:18 <------------- ITERACAO 1 DE 10 ------------->
-2026-05-14 12:23:18 <------------- AGORA ESTA GERANDO A REGRA ------------->
-2026-05-14 12:23:18 INFO rules_farmer.llm_client: LLM generation started provider=deepseek model=deepseek-v4-pro output_schema=RuleAgentOutput
-2026-05-14 12:24:32 INFO rules_farmer.llm_client: LLM generation finished provider=deepseek model=deepseek-v4-pro output_schema=RuleAgentOutput
-2026-05-14 12:24:32 INFO rules_farmer.orchestrator: Rule generation finished experiment_id=0006 iteration=1 rule_count=1 diagnosis_present=False
-2026-05-14 12:24:32 INFO rules_farmer.orchestrator: Generated rule experiment_id=0006 iteration=1 rule_index=1/1 rule=alert udp any any -> 192.168.137.1 8888 (content:"RTPS"; rawbytes; nocase; byte_test:1, >=, 0x40, 16, relative; byte_test:1, <=, 0x44, 16, relative; detection_filter:track by_src, count 100, seconds 1; msg:"Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888"; sid:0; rev:1; classtype:attempted-dos; priority:2; metadata:service xrce-dds;)
-2026-05-14 12:24:32 <------------- AGORA ESTA VALIDANDO A REGRA ------------->
-2026-05-14 12:24:32 WARNING rules_farmer.ssh: SSH command stderr host=192.168.137.1 stderr=ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: rawbytes.
-ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: nocase.
-FATAL: see prior 2 errors (0 warnings)
-Fatal Error, Quitting..
-2026-05-14 12:24:32 WARNING rules_farmer.ids_rule_validator: Snort rule validation rejected error=ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: rawbytes.
-ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: nocase.
-FATAL: see prior 2 errors (0 warnings)
-Fatal Error, Quitting..
-2026-05-14 12:24:32 WARNING rules_farmer.orchestrator: Rule validation rejected rule_index=1/1 error=ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: rawbytes.
-ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: nocase.
-FATAL: see prior 2 errors (0 warnings)
-Fatal Error, Quitting..
-2026-05-14 12:24:32 WARNING rules_farmer.orchestrator: Rule validation failed experiment_id=0006 iteration=1 validation_error=ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: rawbytes.
-ERROR: /tmp/rules_farmer_candidate.rules:1 unknown rule keyword: nocase.
-FATAL: see prior 2 errors (0 warnings)
-Fatal Error, Quitting..
-2026-05-14 12:24:32 <------------- ITERACAO 2 DE 10 ------------->
-2026-05-14 12:24:32 <------------- AGORA ESTA GERANDO A REGRA ------------->
-2026-05-14 12:24:32 INFO rules_farmer.llm_client: LLM generation started provider=deepseek model=deepseek-v4-pro output_schema=RuleAgentOutput
+2026-05-14 14:32:45 INFO rules_farmer: Execution logging started log_path=output.log
+2026-05-14 14:32:45 <------------- CARREGANDO CONFIGURACAO ------------->
+2026-05-14 14:32:54 <------------- INTENCAO RECEBIDA ------------->
+2026-05-14 14:32:54 <------------- MONTANDO RUNTIME ------------->
+2026-05-14 14:32:54 <------------- MONTANDO COMPONENTES ------------->
+2026-05-14 14:32:54 <------------- CONECTANDO NO IDS ------------->
+2026-05-14 14:32:54 INFO rules_farmer.app_factory: Connecting to IDS over SSH host=192.168.137.1 user=gtiotedu
+2026-05-14 14:32:54 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.1 user=gtiotedu attempt=1/3
+2026-05-14 14:32:54 INFO rules_farmer.ssh: SSH connected host=192.168.137.1 user=gtiotedu
+2026-05-14 14:32:54 <------------- CONECTANDO NO ATACANTE ------------->
+2026-05-14 14:32:54 INFO rules_farmer.app_factory: Connecting to attacker over SSH host=192.168.137.94 user=unipampa
+2026-05-14 14:32:54 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.94 user=unipampa attempt=1/3
+2026-05-14 14:32:54 INFO rules_farmer.ssh: SSH connected host=192.168.137.94 user=unipampa
+2026-05-14 14:32:54 <------------- DESCOBRINDO ATAQUES DISPONIVEIS ------------->
+2026-05-14 14:32:54 INFO rules_farmer.attack_discovery: Attack discovery started attacks_root=/home/unipampa/ataques-artigo
+2026-05-14 14:32:55 INFO rules_farmer.attack_discovery: Attack directories found count=10
+2026-05-14 14:32:56 INFO rules_farmer.attack_discovery: Attack discovery finished count=10
+2026-05-14 14:32:56 INFO rules_farmer.app_factory: Discovered attacks count=10
+2026-05-14 14:32:57 <------------- RUNTIME PRONTO ------------->
+2026-05-14 14:32:57 <------------- INICIANDO EXPERIMENTO ------------->
+2026-05-14 14:32:57 INFO rules_farmer.cli: Running experiment for: Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888
+2026-05-14 14:32:57 <------------- EXPERIMENTO INICIADO ------------->
+2026-05-14 14:32:57 INFO rules_farmer.orchestrator: Experiment started experiment_id=0007 max_iterations=10 variant_count=3 intent='Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888'
+2026-05-14 14:32:57 INFO rules_farmer.experiment_recorder: Experiment record initialized experiment_id=0007 dir=results\0007
+2026-05-14 14:32:57 <------------- AGORA ESTA RODANDO BASE ------------->
+2026-05-14 14:32:57 INFO rules_farmer.orchestrator: Variant cycle started experiment_id=0007 variant_index=0 label=base
+2026-05-14 14:32:57 <------------- AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO ------------->
+2026-05-14 14:32:57 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration starting variant_label=base experiment_id=0007 max_internal_attempts=10
+2026-05-14 14:33:32 <------------- AGORA ESTA VALIDANDO A REGRA ------------->
+2026-05-14 14:33:32 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax called rule='alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888"; detection_filter:track by_src, count 100, seconds 1; sid:0; rev:1;)'
+2026-05-14 14:33:32 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax accepted
+2026-05-14 14:33:39 INFO rules_farmer.tools.rule_tools: Tool assign_sid called intent='Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888'
+2026-05-14 14:33:39 INFO rules_farmer.tools.rule_tools: Tool assign_sid produced sid=9000001
+2026-05-14 14:33:44 <------------- AGORA ESTA INJETANDO A REGRA NO IDS ------------->
+2026-05-14 14:33:44 INFO rules_farmer.tools.rule_tools: Tool deploy_rule called
+2026-05-14 14:33:44 INFO rules_farmer.ids_rule_injector: Restarting IDS container container=snort_ids
+2026-05-14 14:33:46 INFO rules_farmer.ids_rule_injector: IDS injection finished container=snort_ids
+2026-05-14 14:33:46 INFO rules_farmer.tools.rule_tools: Tool deploy_rule finished
+2026-05-14 14:33:54 <------------- AGORA ESTA PLANEJANDO O ATAQUE ------------->
+2026-05-14 14:33:54 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker invoked request_variant=False history_count=0
+2026-05-14 14:33:54 <------------- AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO ------------->
+2026-05-14 14:33:54 INFO rules_farmer.agents.attacker_agent: AttackerAgent run started request_variant=False history_count=0
+2026-05-14 14:34:33 <------------- AGORA ESTA RODANDO O ATACANTE ------------->
+2026-05-14 14:34:33 INFO rules_farmer.tools.attack_tools: Tool execute_attack called attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 14:34:33 INFO rules_farmer.attack_executor: Attack selected attack_id=xrce-dds-udp-dos remote_path=/home/unipampa/ataques-artigo/xrce-dds-udp-dos description=Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+2026-05-14 14:34:33 INFO rules_farmer.attack_executor: Attack docker_image=iotedu-attack-xrce-dds-udp-dos:latest arguments=['192.168.137.1', '8888']
+2026-05-14 14:34:33 INFO rules_farmer.attack_executor: Attack readme attack_id=xrce-dds-udp-dos readme=# Ataque "XRCE-DDS UDP DoS"
+
+> Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+
+### Execução do ataque:
+```
+docker run --rm -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest "172.17.0.w" "8888"
+```
+#### Depende de: **`Agente XRCE-DDS`**
+
+#### IP do Agente `XRCE-DDS`:
+```
+docker container inspect $( docker ps -a | grep 'iotedu-attack-xrce-dds-agent' | awk '{print $NF}' ) | grep 'IPAddress' | tail -n1 | awk -F'"' '{print $4}'
+```
+
+#### Logs do Agente `XRCE-DDS`:
+```
+docker logs $( docker ps -a | grep 'iotedu-attack-xrce-dds-agent' | awk '{print $NF}' )
+```
+2026-05-14 14:34:33 INFO rules_farmer.attack_executor: Attack docker command attack_id=xrce-dds-udp-dos cmd=docker run -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest 192.168.137.1 8888 (detached; docker wait will block during capture)
+2026-05-14 14:35:05 INFO rules_farmer.attack_executor: Container status attack_id=xrce-dds-udp-dos container_exit_code=124 stderr_lines=0
+2026-05-14 14:35:05 ERROR rules_farmer.ssh: SFTP get failed host=192.168.137.94 remote_path=/tmp/rules-farmer-attack-UOQjcI/attack.pcap local_path=results\pcaps\xrce-dds-udp-dos-rules-farmer-attack-UOQjcI.pcap
+Traceback (most recent call last):
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\ssh.py", line 118, in get_file
+    sftp.get(remote_path, str(destination))
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\.venv\Lib\site-packages\paramiko\sftp_client.py", line 840, in get
+    size = self.getfo(
+           ^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\.venv\Lib\site-packages\paramiko\sftp_client.py", line 795, in getfo
+    file_size = self.stat(remotepath).st_size
+                ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\.venv\Lib\site-packages\paramiko\sftp_client.py", line 493, in stat
+    t, msg = self._request(CMD_STAT, path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\.venv\Lib\site-packages\paramiko\sftp_client.py", line 857, in _request
+    return self._read_response(num)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\.venv\Lib\site-packages\paramiko\sftp_client.py", line 909, in _read_response
+    self._convert_status(msg)
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\.venv\Lib\site-packages\paramiko\sftp_client.py", line 938, in _convert_status
+    raise IOError(errno.ENOENT, text)
+FileNotFoundError: [Errno 2] No such file
+2026-05-14 14:35:05 WARNING rules_farmer.attack_executor: PCAP not found on remote, continuing without capture attack_id=xrce-dds-udp-dos remote_path=/tmp/rules-farmer-attack-UOQjcI/attack.pcap
+2026-05-14 14:35:05 INFO rules_farmer.tools.attack_tools: Tool execute_attack finished attack_id=xrce-dds-udp-dos container_exit_code=124 pcap=xrce-dds-udp-dos-rules-farmer-attack-UOQjcI.pcap
+2026-05-14 14:35:41 INFO rules_farmer.agents.attacker_agent: AttackerAgent run finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 14:35:41 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 14:35:46 <------------- AGORA ESTA VERIFICANDO ALERTAS DO IDS ------------->
+2026-05-14 14:35:46 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired called sid=9000001
+2026-05-14 14:41:56 INFO rules_farmer.ids_monitor: IDS alert log checked sid=9000001 fired=True
+2026-05-14 14:41:56 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired finished sid=9000001 fired=True
+2026-05-14 14:42:50 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration finished variant_label=base fired=True rules_attempted=1 final_sid=9000001
+2026-05-14 14:42:50 INFO rules_farmer.agents.rules_agent: RulesAgent attempted rule variant_label=base rule_index=1/1 rule=alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS against 192.168.137.1 port 8888"; detection_filter:track by_src, count 100, seconds 1; sid:0; rev:1;)
+2026-05-14 14:42:50 <------------- AGORA ESTA RODANDO VARIANT_1 ------------->
+2026-05-14 14:42:50 INFO rules_farmer.orchestrator: Variant cycle started experiment_id=0007 variant_index=1 label=variant_1
+2026-05-14 14:42:50 <------------- AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO ------------->
+2026-05-14 14:42:50 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration starting variant_label=variant_1 experiment_id=0007 max_internal_attempts=10
+2026-05-14 14:43:29 <------------- AGORA ESTA PLANEJANDO O ATAQUE ------------->
+2026-05-14 14:43:29 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker invoked request_variant=True history_count=1
+2026-05-14 14:43:29 <------------- AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO ------------->
+2026-05-14 14:43:29 INFO rules_farmer.agents.attacker_agent: AttackerAgent run started request_variant=True history_count=1
+2026-05-14 14:44:57 <------------- AGORA ESTA RODANDO O ATACANTE ------------->
+2026-05-14 14:44:57 INFO rules_farmer.tools.attack_tools: Tool execute_attack called attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8889']
+2026-05-14 14:44:57 INFO rules_farmer.attack_executor: Attack selected attack_id=xrce-dds-udp-dos remote_path=/home/unipampa/ataques-artigo/xrce-dds-udp-dos description=Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+2026-05-14 14:44:57 INFO rules_farmer.attack_executor: Attack docker_image=iotedu-attack-xrce-dds-udp-dos:latest arguments=['192.168.137.1', '8889']
+2026-05-14 14:44:57 INFO rules_farmer.attack_executor: Attack readme attack_id=xrce-dds-udp-dos readme=# Ataque "XRCE-DDS UDP DoS"
+
+> Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+
+### Execução do ataque:
+```
+docker run --rm -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest "172.17.0.w" "8888"
+```
+#### Depende de: **`Agente XRCE-DDS`**
+
+#### IP do Agente `XRCE-DDS`:
+```
+docker container inspect $( docker ps -a | grep 'iotedu-attack-xrce-dds-agent' | awk '{print $NF}' ) | grep 'IPAddress' | tail -n1 | awk -F'"' '{print $4}'
+```
+
+#### Logs do Agente `XRCE-DDS`:
+```
+docker logs $( docker ps -a | grep 'iotedu-attack-xrce-dds-agent' | awk '{print $NF}' )
+```
+2026-05-14 14:44:57 INFO rules_farmer.attack_executor: Attack docker command attack_id=xrce-dds-udp-dos cmd=docker run -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest 192.168.137.1 8889 (detached; docker wait will block during capture)
+2026-05-14 14:45:42 <------------- EXPERIMENTO PAROU COM ERRO ------------->
+2026-05-14 14:45:42 ERROR rules_farmer.orchestrator: Experiment stopped due to error experiment_id=0007
+Traceback (most recent call last):
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\orchestrator.py", line 67, in run_experiment
+    result = self.rules_agent.run_iteration(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\agents\rules_agent.py", line 150, in run_iteration
+    result.fired,
+    ^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'fired'. Did you mean: 'find'?
+2026-05-14 14:45:42 INFO rules_farmer.experiment_recorder: Finalizing experiment record as error experiment_id=0007 error_type=AttributeError
+2026-05-14 14:45:42 <------------- EXECUCAO PAROU COM ERRO ------------->
+2026-05-14 14:45:42 ERROR rules_farmer.cli: Execution stopped due to error
+Traceback (most recent call last):
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\cli.py", line 65, in main
+    result = runtime.orchestrator.run_experiment(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\orchestrator.py", line 67, in run_experiment
+    result = self.rules_agent.run_iteration(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\agents\rules_agent.py", line 150, in run_iteration
+    result.fired,
+    ^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'fired'. Did you mean: 'find'?
+2026-05-14 16:14:06 INFO rules_farmer: Execution logging started log_path=output.log
+2026-05-14 16:14:06 <------------- CARREGANDO CONFIGURACAO ------------->
+2026-05-14 16:15:15 <------------- INTENCAO RECEBIDA ------------->
+2026-05-14 16:15:15 <------------- MONTANDO RUNTIME ------------->
+2026-05-14 16:15:15 <------------- MONTANDO COMPONENTES ------------->
+2026-05-14 16:15:15 <------------- CONECTANDO NO IDS ------------->
+2026-05-14 16:15:15 INFO rules_farmer.app_factory: Connecting to IDS over SSH host=192.168.137.1 user=gtiotedu
+2026-05-14 16:15:15 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.1 user=gtiotedu attempt=1/3
+2026-05-14 16:15:16 INFO rules_farmer.ssh: SSH connected host=192.168.137.1 user=gtiotedu
+2026-05-14 16:15:16 <------------- CONECTANDO NO ATACANTE ------------->
+2026-05-14 16:15:16 INFO rules_farmer.app_factory: Connecting to attacker over SSH host=192.168.137.94 user=unipampa
+2026-05-14 16:15:16 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.94 user=unipampa attempt=1/3
+2026-05-14 16:15:16 INFO rules_farmer.ssh: SSH connected host=192.168.137.94 user=unipampa
+2026-05-14 16:15:16 <------------- DESCOBRINDO ATAQUES DISPONIVEIS ------------->
+2026-05-14 16:15:16 INFO rules_farmer.attack_discovery: Attack discovery started attacks_root=/home/unipampa/ataques-artigo
+2026-05-14 16:15:17 INFO rules_farmer.attack_discovery: Attack directories found count=10
+2026-05-14 16:15:18 INFO rules_farmer.attack_discovery: Attack discovery finished count=10
+2026-05-14 16:15:18 INFO rules_farmer.app_factory: Discovered attacks count=10
+2026-05-14 16:15:18 <------------- RUNTIME PRONTO ------------->
+2026-05-14 16:15:18 <------------- INICIANDO EXPERIMENTO ------------->
+2026-05-14 16:15:18 INFO rules_farmer.cli: Running experiment for: Detect XRCE-DDS UDP DoS
+2026-05-14 16:15:18 INFO rules_farmer.intent_preprocessor: Intent preprocessing matched XRCE family intent='Detect XRCE-DDS UDP DoS'
+2026-05-14 16:15:18 <------------- EXPERIMENTO INICIADO ------------->
+2026-05-14 16:15:18 INFO rules_farmer.orchestrator: Experiment started experiment_id=0008 max_iterations=10 variant_count=3 intent='Detect XRCE-DDS UDP DoS' fixed_destination=xrce://172.17.0.2:8888
+2026-05-14 16:15:18 INFO rules_farmer.experiment_recorder: Experiment record initialized experiment_id=0008 dir=results\0008
+2026-05-14 16:15:18 <------------- AGORA ESTA RODANDO BASE ------------->
+2026-05-14 16:15:18 INFO rules_farmer.orchestrator: Variant cycle started experiment_id=0008 variant_index=0 label=base
+2026-05-14 16:15:18 <------------- AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO ------------->
+2026-05-14 16:15:18 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration starting variant_label=base experiment_id=0008 max_internal_attempts=10
+2026-05-14 16:15:50 <------------- AGORA ESTA VALIDANDO A REGRA ------------->
+2026-05-14 16:15:50 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax called rule='alert udp any any -> 172.17.0.2 8888 (msg:"Detect XRCE-DDS UDP DoS against 172.17.0.2 port 8888"; detection_filter:track by_src, count 100, seconds 1; sid:0; rev:1;)'
+2026-05-14 16:15:55 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax accepted
+2026-05-14 16:16:02 INFO rules_farmer.tools.rule_tools: Tool assign_sid called intent='Detect XRCE-DDS UDP DoS against 172.17.0.2 port 8888'
+2026-05-14 16:16:02 INFO rules_farmer.tools.rule_tools: Tool assign_sid produced sid=9000002
+2026-05-14 16:16:08 <------------- AGORA ESTA INJETANDO A REGRA NO IDS ------------->
+2026-05-14 16:16:08 INFO rules_farmer.tools.rule_tools: Tool deploy_rule called
+2026-05-14 16:16:08 INFO rules_farmer.ids_rule_injector: Restarting IDS container container=snort_ids
+2026-05-14 16:16:14 INFO rules_farmer.ids_rule_injector: IDS injection finished container=snort_ids
+2026-05-14 16:16:14 INFO rules_farmer.tools.rule_tools: Tool deploy_rule finished
+2026-05-14 16:16:22 <------------- AGORA ESTA PLANEJANDO O ATAQUE ------------->
+2026-05-14 16:16:22 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker invoked request_variant=False history_count=0 fixed_destination=172.17.0.2:8888
+2026-05-14 16:16:22 <------------- AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO ------------->
+2026-05-14 16:16:22 INFO rules_farmer.agents.attacker_agent: AttackerAgent run started request_variant=False history_count=0
+2026-05-14 16:16:53 <------------- AGORA ESTA RODANDO O ATACANTE ------------->
+2026-05-14 16:16:53 INFO rules_farmer.tools.attack_tools: Tool execute_attack called attack_id=xrce-dds-udp-dos arguments=['172.17.0.2', '8888']
+2026-05-14 16:16:53 INFO rules_farmer.attack_executor: Attack selected attack_id=xrce-dds-udp-dos remote_path=/home/unipampa/ataques-artigo/xrce-dds-udp-dos description=Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+2026-05-14 16:16:53 INFO rules_farmer.attack_executor: Attack docker_image=iotedu-attack-xrce-dds-udp-dos:latest arguments=['172.17.0.2', '8888']
+2026-05-14 16:16:53 INFO rules_farmer.attack_executor: Attack docker command attack_id=xrce-dds-udp-dos cmd=docker run -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest 172.17.0.2 8888
+2026-05-14 16:17:30 <------------- EXPERIMENTO PAROU COM ERRO ------------->
+2026-05-14 16:17:30 ERROR rules_farmer.orchestrator: Experiment stopped due to error experiment_id=0008
+Traceback (most recent call last):
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\orchestrator.py", line 72, in run_experiment
+    result = self.rules_agent.run_iteration(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\agents\rules_agent.py", line 170, in run_iteration
+    result.fired,
+    ^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'fired'. Did you mean: 'find'?
+2026-05-14 16:17:30 INFO rules_farmer.experiment_recorder: Finalizing experiment record as error experiment_id=0008 error_type=AttributeError
+2026-05-14 16:17:30 <------------- EXECUCAO PAROU COM ERRO ------------->
+2026-05-14 16:17:30 ERROR rules_farmer.cli: Execution stopped due to error
+Traceback (most recent call last):
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\cli.py", line 65, in main
+    result = runtime.orchestrator.run_experiment(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\orchestrator.py", line 72, in run_experiment
+    result = self.rules_agent.run_iteration(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mciocca\Documents\artigo\llm_rules_tk\src\rules_farmer\agents\rules_agent.py", line 170, in run_iteration
+    result.fired,
+    ^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'fired'. Did you mean: 'find'?
+2026-05-14 16:17:35 INFO rules_farmer: Execution logging started log_path=output.log
+2026-05-14 16:17:35 <------------- CARREGANDO CONFIGURACAO ------------->
+2026-05-14 16:18:03 <------------- INTENCAO RECEBIDA ------------->
+2026-05-14 16:18:03 <------------- MONTANDO RUNTIME ------------->
+2026-05-14 16:18:03 <------------- MONTANDO COMPONENTES ------------->
+2026-05-14 16:18:03 <------------- CONECTANDO NO IDS ------------->
+2026-05-14 16:18:03 INFO rules_farmer.app_factory: Connecting to IDS over SSH host=192.168.137.1 user=gtiotedu
+2026-05-14 16:18:03 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.1 user=gtiotedu attempt=1/3
+2026-05-14 16:18:03 INFO rules_farmer.ssh: SSH connected host=192.168.137.1 user=gtiotedu
+2026-05-14 16:18:03 <------------- CONECTANDO NO ATACANTE ------------->
+2026-05-14 16:18:03 INFO rules_farmer.app_factory: Connecting to attacker over SSH host=192.168.137.94 user=unipampa
+2026-05-14 16:18:03 INFO rules_farmer.ssh: SSH connect attempt host=192.168.137.94 user=unipampa attempt=1/3
+2026-05-14 16:18:03 INFO rules_farmer.ssh: SSH connected host=192.168.137.94 user=unipampa
+2026-05-14 16:18:03 <------------- DESCOBRINDO ATAQUES DISPONIVEIS ------------->
+2026-05-14 16:18:03 INFO rules_farmer.attack_discovery: Attack discovery started attacks_root=/home/unipampa/ataques-artigo
+2026-05-14 16:18:04 INFO rules_farmer.attack_discovery: Attack directories found count=10
+2026-05-14 16:18:05 INFO rules_farmer.attack_discovery: Attack discovery finished count=10
+2026-05-14 16:18:05 INFO rules_farmer.app_factory: Discovered attacks count=10
+2026-05-14 16:18:06 <------------- RUNTIME PRONTO ------------->
+2026-05-14 16:18:06 <------------- INICIANDO EXPERIMENTO ------------->
+2026-05-14 16:18:06 INFO rules_farmer.cli: Running experiment for: Detect XRCE-DDS UDP DoS
+2026-05-14 16:18:06 INFO rules_farmer.intent_preprocessor: Intent preprocessing matched XRCE family intent='Detect XRCE-DDS UDP DoS'
+2026-05-14 16:18:06 <------------- EXPERIMENTO INICIADO ------------->
+2026-05-14 16:18:06 INFO rules_farmer.orchestrator: Experiment started experiment_id=0009 max_iterations=10 variant_count=3 intent='Detect XRCE-DDS UDP DoS' fixed_destination=xrce://192.168.137.1:8888
+2026-05-14 16:18:06 INFO rules_farmer.experiment_recorder: Experiment record initialized experiment_id=0009 dir=results\0009
+2026-05-14 16:18:06 <------------- AGORA ESTA RODANDO BASE ------------->
+2026-05-14 16:18:06 INFO rules_farmer.orchestrator: Variant cycle started experiment_id=0009 variant_index=0 label=base
+2026-05-14 16:18:06 <------------- AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO ------------->
+2026-05-14 16:18:06 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration starting variant_label=base experiment_id=0009 max_internal_attempts=10
+2026-05-14 16:18:46 <------------- AGORA ESTA VALIDANDO A REGRA ------------->
+2026-05-14 16:18:46 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax called rule='alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS"; detection_filter:track by_src, count 500, seconds 5; sid:0; rev:1;)'
+2026-05-14 16:18:46 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax accepted
+2026-05-14 16:18:52 INFO rules_farmer.tools.rule_tools: Tool assign_sid called intent='Detect XRCE-DDS UDP DoS'
+2026-05-14 16:18:52 INFO rules_farmer.tools.rule_tools: Tool assign_sid produced sid=9000003
+2026-05-14 16:18:58 <------------- AGORA ESTA INJETANDO A REGRA NO IDS ------------->
+2026-05-14 16:18:58 INFO rules_farmer.tools.rule_tools: Tool deploy_rule called
+2026-05-14 16:18:58 INFO rules_farmer.ids_rule_injector: Restarting IDS container container=snort_ids
+2026-05-14 16:19:00 INFO rules_farmer.ids_rule_injector: IDS injection finished container=snort_ids
+2026-05-14 16:19:00 INFO rules_farmer.tools.rule_tools: Tool deploy_rule finished
+2026-05-14 16:19:06 <------------- AGORA ESTA PLANEJANDO O ATAQUE ------------->
+2026-05-14 16:19:06 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker invoked request_variant=False history_count=0 fixed_destination=192.168.137.1:8888
+2026-05-14 16:19:06 <------------- AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO ------------->
+2026-05-14 16:19:06 INFO rules_farmer.agents.attacker_agent: AttackerAgent run started request_variant=False history_count=0
+2026-05-14 16:19:27 <------------- AGORA ESTA RODANDO O ATACANTE ------------->
+2026-05-14 16:19:27 INFO rules_farmer.tools.attack_tools: Tool execute_attack called attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:19:27 INFO rules_farmer.attack_executor: Attack selected attack_id=xrce-dds-udp-dos remote_path=/home/unipampa/ataques-artigo/xrce-dds-udp-dos description=Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+2026-05-14 16:19:27 INFO rules_farmer.attack_executor: Attack docker_image=iotedu-attack-xrce-dds-udp-dos:latest arguments=['192.168.137.1', '8888']
+2026-05-14 16:19:27 INFO rules_farmer.attack_executor: Attack docker command attack_id=xrce-dds-udp-dos cmd=docker run -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest 192.168.137.1 8888
+2026-05-14 16:19:58 INFO rules_farmer.attack_executor: Container status attack_id=xrce-dds-udp-dos container_exit_code=124 stderr_lines=0
+2026-05-14 16:19:58 INFO rules_farmer.tools.attack_tools: Tool execute_attack finished attack_id=xrce-dds-udp-dos container_exit_code=124
+2026-05-14 16:20:31 INFO rules_farmer.agents.attacker_agent: AttackerAgent run finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:20:31 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:20:36 <------------- AGORA ESTA VERIFICANDO ALERTAS DO IDS ------------->
+2026-05-14 16:20:36 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired called sid=9000003
+2026-05-14 16:21:30 INFO rules_farmer.ids_monitor: IDS alert log checked sid=9000003 fired=True
+2026-05-14 16:21:30 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired finished sid=9000003 fired=True
+2026-05-14 16:22:03 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration finished variant_label=base fired=True rules_attempted=1 final_sid=9000003
+2026-05-14 16:22:03 INFO rules_farmer.agents.rules_agent: RulesAgent attempted rule variant_label=base rule_index=1/1 rule=alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS"; detection_filter:track by_src, count 500, seconds 5; sid:0; rev:1;)
+2026-05-14 16:22:03 <------------- AGORA ESTA RODANDO VARIANT_1 ------------->
+2026-05-14 16:22:03 INFO rules_farmer.orchestrator: Variant cycle started experiment_id=0009 variant_index=1 label=variant_1
+2026-05-14 16:22:03 <------------- AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO ------------->
+2026-05-14 16:22:03 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration starting variant_label=variant_1 experiment_id=0009 max_internal_attempts=10
+2026-05-14 16:22:45 <------------- AGORA ESTA PLANEJANDO O ATAQUE ------------->
+2026-05-14 16:22:45 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker invoked request_variant=True history_count=1 fixed_destination=192.168.137.1:8888
+2026-05-14 16:22:45 <------------- AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO ------------->
+2026-05-14 16:22:45 INFO rules_farmer.agents.attacker_agent: AttackerAgent run started request_variant=True history_count=1
+2026-05-14 16:24:08 <------------- AGORA ESTA RODANDO O ATACANTE ------------->
+2026-05-14 16:24:08 INFO rules_farmer.tools.attack_tools: Tool execute_attack called attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:24:08 INFO rules_farmer.attack_executor: Attack selected attack_id=xrce-dds-udp-dos remote_path=/home/unipampa/ataques-artigo/xrce-dds-udp-dos description=Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+2026-05-14 16:24:08 INFO rules_farmer.attack_executor: Attack docker_image=iotedu-attack-xrce-dds-udp-dos:latest arguments=['192.168.137.1', '8888']
+2026-05-14 16:24:08 INFO rules_farmer.attack_executor: Attack docker command attack_id=xrce-dds-udp-dos cmd=docker run -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest 192.168.137.1 8888
+2026-05-14 16:24:39 INFO rules_farmer.attack_executor: Container status attack_id=xrce-dds-udp-dos container_exit_code=124 stderr_lines=0
+2026-05-14 16:24:39 INFO rules_farmer.tools.attack_tools: Tool execute_attack finished attack_id=xrce-dds-udp-dos container_exit_code=124
+2026-05-14 16:25:23 INFO rules_farmer.agents.attacker_agent: AttackerAgent run finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:25:23 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:25:31 <------------- AGORA ESTA VERIFICANDO ALERTAS DO IDS ------------->
+2026-05-14 16:25:31 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired called sid=9000003
+2026-05-14 16:26:45 INFO rules_farmer.ids_monitor: IDS alert log checked sid=9000003 fired=True
+2026-05-14 16:26:45 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired finished sid=9000003 fired=True
+2026-05-14 16:27:29 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration finished variant_label=variant_1 fired=True rules_attempted=1 final_sid=9000003
+2026-05-14 16:27:29 INFO rules_farmer.agents.rules_agent: RulesAgent attempted rule variant_label=variant_1 rule_index=1/1 rule=alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS"; detection_filter:track by_src, count 500, seconds 5; sid:9000003; rev:1;)
+2026-05-14 16:27:29 <------------- AGORA ESTA RODANDO VARIANT_2 ------------->
+2026-05-14 16:27:29 INFO rules_farmer.orchestrator: Variant cycle started experiment_id=0009 variant_index=2 label=variant_2
+2026-05-14 16:27:29 <------------- AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO ------------->
+2026-05-14 16:27:29 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration starting variant_label=variant_2 experiment_id=0009 max_internal_attempts=10
+2026-05-14 16:28:09 <------------- AGORA ESTA PLANEJANDO O ATAQUE ------------->
+2026-05-14 16:28:09 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker invoked request_variant=True history_count=2 fixed_destination=192.168.137.1:8888
+2026-05-14 16:28:09 <------------- AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO ------------->
+2026-05-14 16:28:09 INFO rules_farmer.agents.attacker_agent: AttackerAgent run started request_variant=True history_count=2
+2026-05-14 16:29:34 <------------- AGORA ESTA RODANDO O ATACANTE ------------->
+2026-05-14 16:29:34 INFO rules_farmer.tools.attack_tools: Tool execute_attack called attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:29:34 INFO rules_farmer.attack_executor: Attack selected attack_id=xrce-dds-udp-dos remote_path=/home/unipampa/ataques-artigo/xrce-dds-udp-dos description=Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+2026-05-14 16:29:34 INFO rules_farmer.attack_executor: Attack docker_image=iotedu-attack-xrce-dds-udp-dos:latest arguments=['192.168.137.1', '8888']
+2026-05-14 16:29:34 INFO rules_farmer.attack_executor: Attack docker command attack_id=xrce-dds-udp-dos cmd=docker run -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest 192.168.137.1 8888
+2026-05-14 16:30:05 INFO rules_farmer.attack_executor: Container status attack_id=xrce-dds-udp-dos container_exit_code=124 stderr_lines=0
+2026-05-14 16:30:05 INFO rules_farmer.tools.attack_tools: Tool execute_attack finished attack_id=xrce-dds-udp-dos container_exit_code=124
+2026-05-14 16:30:47 INFO rules_farmer.agents.attacker_agent: AttackerAgent run finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:30:47 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:30:54 <------------- AGORA ESTA VERIFICANDO ALERTAS DO IDS ------------->
+2026-05-14 16:30:54 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired called sid=9000003
+2026-05-14 16:32:35 INFO rules_farmer.ids_monitor: IDS alert log checked sid=9000003 fired=True
+2026-05-14 16:32:35 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired finished sid=9000003 fired=True
+2026-05-14 16:33:34 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration finished variant_label=variant_2 fired=True rules_attempted=1 final_sid=9000003
+2026-05-14 16:33:34 INFO rules_farmer.agents.rules_agent: RulesAgent attempted rule variant_label=variant_2 rule_index=1/1 rule=alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS"; detection_filter:track by_src, count 500, seconds 5; sid:9000003; rev:1;)
+2026-05-14 16:33:34 <------------- AGORA ESTA RODANDO VARIANT_3 ------------->
+2026-05-14 16:33:34 INFO rules_farmer.orchestrator: Variant cycle started experiment_id=0009 variant_index=3 label=variant_3
+2026-05-14 16:33:34 <------------- AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO ------------->
+2026-05-14 16:33:34 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration starting variant_label=variant_3 experiment_id=0009 max_internal_attempts=10
+2026-05-14 16:34:34 <------------- AGORA ESTA VALIDANDO A REGRA ------------->
+2026-05-14 16:34:34 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax called rule='alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS"; detection_filter:track by_src, count 500, seconds 5; sid:0; rev:1;)'
+2026-05-14 16:34:35 INFO rules_farmer.tools.rule_tools: Tool validate_rule_syntax accepted
+2026-05-14 16:34:42 INFO rules_farmer.tools.rule_tools: Tool assign_sid called intent='Detect XRCE-DDS UDP DoS'
+2026-05-14 16:34:42 INFO rules_farmer.tools.rule_tools: Tool assign_sid produced sid=9000004
+2026-05-14 16:34:47 <------------- AGORA ESTA INJETANDO A REGRA NO IDS ------------->
+2026-05-14 16:34:47 INFO rules_farmer.tools.rule_tools: Tool deploy_rule called
+2026-05-14 16:34:47 INFO rules_farmer.ids_rule_injector: Restarting IDS container container=snort_ids
+2026-05-14 16:34:48 INFO rules_farmer.ids_rule_injector: IDS injection finished container=snort_ids
+2026-05-14 16:34:48 INFO rules_farmer.tools.rule_tools: Tool deploy_rule finished
+2026-05-14 16:34:59 <------------- AGORA ESTA PLANEJANDO O ATAQUE ------------->
+2026-05-14 16:34:59 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker invoked request_variant=True history_count=3 fixed_destination=192.168.137.1:8888
+2026-05-14 16:34:59 <------------- AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO ------------->
+2026-05-14 16:34:59 INFO rules_farmer.agents.attacker_agent: AttackerAgent run started request_variant=True history_count=3
+2026-05-14 16:36:35 <------------- AGORA ESTA RODANDO O ATACANTE ------------->
+2026-05-14 16:36:35 INFO rules_farmer.tools.attack_tools: Tool execute_attack called attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:36:35 INFO rules_farmer.attack_executor: Attack selected attack_id=xrce-dds-udp-dos remote_path=/home/unipampa/ataques-artigo/xrce-dds-udp-dos description=Executa 10 segundos de inundação de pacotes UDP contra XRCE-DDS Agent em `172.17.0.w` na porta especificada
+2026-05-14 16:36:35 INFO rules_farmer.attack_executor: Attack docker_image=iotedu-attack-xrce-dds-udp-dos:latest arguments=['192.168.137.1', '8888']
+2026-05-14 16:36:35 INFO rules_farmer.attack_executor: Attack docker command attack_id=xrce-dds-udp-dos cmd=docker run -d --name iotedu-attack-xrce-dds-udp-dos iotedu-attack-xrce-dds-udp-dos:latest 192.168.137.1 8888
+2026-05-14 16:37:06 INFO rules_farmer.attack_executor: Container status attack_id=xrce-dds-udp-dos container_exit_code=124 stderr_lines=0
+2026-05-14 16:37:06 INFO rules_farmer.tools.attack_tools: Tool execute_attack finished attack_id=xrce-dds-udp-dos container_exit_code=124
+2026-05-14 16:37:53 INFO rules_farmer.agents.attacker_agent: AttackerAgent run finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:37:53 INFO rules_farmer.tools.inter_agent_tools: Tool trigger_attacker finished attack_id=xrce-dds-udp-dos arguments=['192.168.137.1', '8888']
+2026-05-14 16:37:58 <------------- AGORA ESTA VERIFICANDO ALERTAS DO IDS ------------->
+2026-05-14 16:37:58 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired called sid=9000004
+2026-05-14 16:40:06 INFO rules_farmer.ids_monitor: IDS alert log checked sid=9000004 fired=True
+2026-05-14 16:40:06 INFO rules_farmer.tools.monitor_tools: Tool check_alert_fired finished sid=9000004 fired=True
+2026-05-14 16:40:45 INFO rules_farmer.agents.rules_agent: RulesAgent run_iteration finished variant_label=variant_3 fired=True rules_attempted=1 final_sid=9000004
+2026-05-14 16:40:45 INFO rules_farmer.agents.rules_agent: RulesAgent attempted rule variant_label=variant_3 rule_index=1/1 rule=alert udp any any -> 192.168.137.1 8888 (msg:"Detect XRCE-DDS UDP DoS"; detection_filter:track by_src, count 500, seconds 5; sid:0; rev:1;)
+2026-05-14 16:40:45 <------------- EXPERIMENTO CONVERGIU ------------->
+2026-05-14 16:40:45 INFO rules_farmer.experiment_recorder: Finalizing experiment record experiment_id=0009 converged=True
+2026-05-14 16:40:45 INFO rules_farmer.orchestrator: Experiment finalized experiment_id=0009 status=converged json_path=results\0009\experiment.json csv_path=results\0009\metrics.csv
+2026-05-14 16:40:45 INFO rules_farmer.cli: Status: converged
+2026-05-14 16:40:45 INFO rules_farmer.cli: JSON: results\0009\experiment.json
+2026-05-14 16:40:45 INFO rules_farmer.cli: CSV: results\0009\metrics.csv
+2026-05-14 16:40:45 <------------- EXECUCAO FINALIZADA ------------->
+2026-05-14 16:40:45 INFO rules_farmer.cli: Experiment finished status=converged experiment_id=0009 json_path=results\0009\experiment.json csv_path=results\0009\metrics.csv

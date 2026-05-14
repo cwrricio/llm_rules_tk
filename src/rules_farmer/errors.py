@@ -10,10 +10,6 @@ class SSHUnreachableError(RulesFarmerError):
     """Raised when a remote entity cannot be reached over SSH."""
 
 
-class PCAPRetrievalError(RulesFarmerError):
-    """Raised when a remote PCAP cannot be retrieved."""
-
-
 class IDSReloadError(RulesFarmerError):
     """Raised when the IDS container fails to reload rules."""
 

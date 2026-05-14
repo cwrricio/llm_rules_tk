@@ -3,7 +3,7 @@ import textwrap
 import pytest
 from pydantic import ValidationError
 
-from rules_farmer.config import load_config
+from rules_farmer.config import Config, load_config
 
 
 def write_config(path):
@@ -51,6 +51,13 @@ def write_config(path):
               attacker_attacks_root: /home/unipampa/ataques/attackers-claude
               attacker_capture_interface: any
               results_output_dir: ./results
+            attack_destinations:
+              mqtt:
+                ip: 172.17.0.2
+                port: 1883
+              xrce:
+                ip: 172.17.0.2
+                port: 8888
             """
         ).strip()
     )
@@ -75,6 +82,9 @@ def test_load_config_reads_yaml_and_env_overrides(tmp_path, monkeypatch):
     )
     assert config.testbed.attacker_attacks_root == "/home/unipampa/ataques/attackers-claude"
     assert config.testbed.attacker_capture_interface == "any"
+    assert config.attack_destinations.mqtt.port == 1883
+    assert config.attack_destinations.xrce.port == 8888
+    assert config.attack_destinations.mqtt.ip == "172.17.0.2"
 
 
 def test_orchestrator_api_host_and_port_default_when_cli_config_omits_them(tmp_path):
@@ -92,31 +102,43 @@ def test_orchestrator_api_host_and_port_default_when_cli_config_omits_them(tmp_p
     assert config.testbed.orchestrator_port == 8000
 
 
-def test_api_keys_are_loaded_only_from_environment(tmp_path, monkeypatch):
+def test_load_config_drops_legacy_api_keys_block(tmp_path):
+    """Legacy configs may still carry api_keys: — load_config must silently drop it because agno
+    reads keys directly from environment variables now."""
     config_path = tmp_path / "config.yaml"
     write_config(config_path)
-    monkeypatch.setenv("OPENAI_API_KEY", "env-openai-key")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "env-anthropic-key")
-    monkeypatch.setenv("GROQ_API_KEY", "env-groq-key")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "env-deepseek-key")
+    config_path.write_text(
+        config_path.read_text()
+        + "\napi_keys:\n  anthropic: legacy-should-be-ignored\n"
+    )
+
+    # Should not raise — the legacy key is popped before validation.
+    config = load_config(config_path)
+    assert isinstance(config, Config)
+    assert not hasattr(config, "api_keys")
+
+
+def test_load_config_drops_legacy_attack_plan_validation(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    write_config(config_path)
+    # The base fixture already has attack_plan_validation: — just confirm it doesn't break.
 
     config = load_config(config_path)
-
-    assert config.api_keys.openai == "env-openai-key"
-    assert config.api_keys.anthropic == "env-anthropic-key"
-    assert config.api_keys.groq == "env-groq-key"
-    assert config.api_keys.deepseek == "env-deepseek-key"
+    assert isinstance(config, Config)
+    assert not hasattr(config, "attack_plan_validation")
 
 
 def test_load_config_loads_dotenv_next_to_config(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     write_config(config_path)
-    (tmp_path / ".env").write_text("GROQ_API_KEY=dotenv-groq-key\n", encoding="utf-8")
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=dotenv-anthropic-key\n", encoding="utf-8")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    config = load_config(config_path)
+    load_config(config_path)
 
-    assert config.api_keys.groq == "dotenv-groq-key"
+    # .env must have been merged into os.environ for agno to find it later.
+    import os
+    assert os.environ.get("ANTHROPIC_API_KEY") == "dotenv-anthropic-key"
 
 
 def test_missing_required_config_field_fails_at_load_time(tmp_path):

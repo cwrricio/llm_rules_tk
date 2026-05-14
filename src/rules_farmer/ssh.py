@@ -7,7 +7,7 @@ from pathlib import Path
 
 import paramiko
 
-from rules_farmer.errors import PCAPRetrievalError, SSHUnreachableError
+from rules_farmer.errors import SSHUnreachableError
 
 
 logger = logging.getLogger(__name__)
@@ -103,36 +103,6 @@ class SSHClient:
                 result.stderr.strip(),
             )
         return result
-
-    def get_file(self, remote_path: str, local_path: str | Path) -> None:
-        destination = Path(local_path)
-        logger.debug(
-            "SFTP get start host=%s remote_path=%s local_path=%s",
-            self.host,
-            remote_path,
-            destination,
-        )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        sftp = self._client.open_sftp()
-        try:
-            sftp.get(remote_path, str(destination))
-            logger.debug(
-                "SFTP get done host=%s remote_path=%s local_path=%s",
-                self.host,
-                remote_path,
-                destination,
-            )
-        except FileNotFoundError as exc:
-            logger.exception(
-                "SFTP get failed host=%s remote_path=%s local_path=%s",
-                self.host,
-                remote_path,
-                destination,
-            )
-            raise PCAPRetrievalError(f"PCAP not found at {remote_path}") from exc
-        finally:
-            sftp.close()
-
 
 def _single_line(command: str) -> str:
     return command.replace("\n", "\\n")

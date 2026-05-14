@@ -53,8 +53,8 @@ class ExperimentRecorder:
 
     def initialize_experiment(self, experiment_id: str, intent: str) -> None:
         experiment_dir = self._experiment_dir(experiment_id)
+        experiment_dir.mkdir(parents=True, exist_ok=True)
         logger.info("Experiment record initialized experiment_id=%s dir=%s", experiment_id, experiment_dir)
-        (experiment_dir / "pcaps").mkdir(parents=True, exist_ok=True)
         self._write_experiment(
             experiment_id,
             {
@@ -74,7 +74,6 @@ class ExperimentRecorder:
         arguments: list[str],
         fired: bool,
         evasion_rationale: str,
-        pcap_filename: str | None = None,
         rule: str | None = None,
         container_exit_code: int | None = None,
         container_stderr: str | None = None,
@@ -104,8 +103,6 @@ class ExperimentRecorder:
                 "fired": fired,
             },
         }
-        if pcap_filename is not None:
-            execution["pcap_path"] = f"pcaps/{pcap_filename}"
         experiment["executions"].append(execution)
         self._write_experiment(experiment_id, experiment)
 

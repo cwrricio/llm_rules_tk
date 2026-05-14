@@ -52,8 +52,8 @@ def test_post_experiments_starts_background_run_and_get_returns_result():
     assert client.get("/experiments/exp-1").json() == {
         "status": "converged",
         "result": {
-            "json_path": "/tmp/results/exp-1/experiment.json",
-            "csv_path": "/tmp/results/exp-1/metrics.csv",
+            "json_path": str(Path("/tmp/results/exp-1/experiment.json")),
+            "csv_path": str(Path("/tmp/results/exp-1/metrics.csv")),
         },
     }
 

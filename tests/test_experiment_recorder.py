@@ -16,7 +16,6 @@ def test_recorder_writes_experiment_json_and_metrics_csv(tmp_path):
         arguments=["10.0.0.5", "1883"],
         fired=False,
         evasion_rationale="Baseline attack should match the generated rule",
-        pcap_filename="iter1_base.pcap",
     )
     artifacts = recorder.finalize("exp-1", converged=False)
 
@@ -39,7 +38,6 @@ def test_recorder_writes_experiment_json_and_metrics_csv(tmp_path):
                 "rule": "",
                 "fired": False,
             },
-            "pcap_path": "pcaps/iter1_base.pcap",
         }
     ]
 

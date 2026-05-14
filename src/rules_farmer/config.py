@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 logger = logging.getLogger(__name__)
@@ -54,17 +54,33 @@ class SSHRetryConfig(BaseModel):
     base_delay_seconds: float
 
 
-class AttackPlanValidationConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    max_retries: int
-
-
 class ExperimentDefaultsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_iterations: int
     variant_count: int
+
+
+class AttackDestination(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ip: str
+    port: int
+
+
+class AttackDestinationsConfig(BaseModel):
+    """Fixed destination IP/port per attack family.
+
+    Why fixed: the testbed target service runs on a well-known address per protocol family
+    (MQTT broker on 1883, XRCE-DDS Agent on 8888). Letting the LLM invent these would
+    silently break attacks that have port as a parameter. The agents are instructed to NEVER
+    mutate these values when producing variants.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mqtt: AttackDestination
+    xrce: AttackDestination
 
 
 class TestbedConfig(BaseModel):
@@ -86,15 +102,6 @@ class TestbedConfig(BaseModel):
     results_output_dir: str
 
 
-class APIKeys(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    anthropic: str | None = None
-    openai: str | None = None
-    groq: str | None = None
-    deepseek: str | None = None
-
-
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -102,10 +109,9 @@ class Config(BaseModel):
     timeouts: TimeoutConfig
     ssh: SSHConfig
     ssh_retry: SSHRetryConfig
-    attack_plan_validation: AttackPlanValidationConfig
     experiment_defaults: ExperimentDefaultsConfig
     testbed: TestbedConfig
-    api_keys: APIKeys = Field(default_factory=APIKeys)
+    attack_destinations: AttackDestinationsConfig
 
 
 def load_config(path: str | Path) -> Config:
@@ -115,14 +121,10 @@ def load_config(path: str | Path) -> Config:
     with config_path.open("r", encoding="utf-8") as config_file:
         raw_config = yaml.safe_load(config_file) or {}
 
+    # api_keys field used to exist in config.yaml — drop it; agno reads keys from env vars directly.
     raw_config.pop("api_keys", None)
+    raw_config.pop("attack_plan_validation", None)
     _apply_env_overrides(raw_config)
-    raw_config["api_keys"] = APIKeys(
-        anthropic=os.environ.get("ANTHROPIC_API_KEY"),
-        openai=os.environ.get("OPENAI_API_KEY"),
-        groq=os.environ.get("GROQ_API_KEY"),
-        deepseek=os.environ.get("DEEPSEEK_API_KEY"),
-    ).model_dump()
     config = Config.model_validate(raw_config)
     logger.debug("Config load finished path=%s", config_path)
     return config

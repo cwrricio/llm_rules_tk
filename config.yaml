@@ -35,7 +35,7 @@ experiment_defaults:
   variant_count: 3
 
 testbed:
-  ids_alert_log_path: /var/log/snort/alert
+  ids_alert_log_path: /home/gtiotedu/ataques-regras-e-assinaturas/snort/logs/alert_fast.txt
   ids_rules_file_path: /home/gtiotedu/ataques-regras-e-assinaturas/snort/rules/temp/rules_farmer_ai.rules
   ids_rules_include_file_path: /home/gtiotedu/ataques-regras-e-assinaturas/snort/rules/all.rules
   ids_rule_include_statement: include rules/temp/rules_farmer_ai.rules
@@ -46,3 +46,13 @@ testbed:
   sid_counter_file_path: ./data/sid_counter.json
   experiment_counter_file_path: ./data/experiment_counter.json
   results_output_dir: ./results
+
+# Fixed destination per attack family. Agents NEVER mutate these values; if the chosen attack
+# accepts port as a positional argument, that argument MUST be set to the configured port.
+attack_destinations:
+  mqtt:
+    ip: 192.168.137.1
+    port: 1883
+  xrce:
+    ip: 192.168.137.1
+    port: 8888
