@@ -1,0 +1,4 @@
+# fired_at=2026-05-15T02:42:40Z
+alert udp any any -> any any (msg:"quero gerar regras xrce-dds-session-hijack"; pcre:"/^\\x00..\\x01/"; detection_filter:track by_src, count 3, seconds 30; sid:0; rev:1;)
+# fired_at=2026-05-15T03:21:27Z
+alert udp any any -> any any (msg:"quero gerar regras xrce-dds-session-hijack"; content:"|01|"; dsize:15<>100; detection_filter:track by_src, count 1, seconds 300; sid:0; rev:1;)

@@ -1,0 +1,4 @@
+# fired_at=2026-05-15T02:09:26Z
+alert udp any any -> any any (msg:"quero gerar regras xrce-dds-fragment-abuse"; content:"|0c|"; detection_filter:track by_dst, count 5, seconds 1; sid:0; rev:1;)
+# fired_at=2026-05-15T02:12:16Z
+alert udp any any -> any any (msg:"quero gerar regras xrce-dds-fragment-abuse"; content:"|0c|"; detection_filter:track by_dst, count 3, seconds 20; sid:0; rev:1;)

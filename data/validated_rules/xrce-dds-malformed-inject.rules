@@ -1,0 +1,2 @@
+# fired_at=2026-05-15T02:16:29Z
+alert udp any any -> any any (msg:"quero gerar regras xrce-dds-malformed-inject"; content:"%x%x"; sid:0; rev:1;)
