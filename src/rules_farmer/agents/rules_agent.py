@@ -20,10 +20,12 @@ from rules_farmer.tools import (
     make_assign_sid,
     make_check_alert_fired,
     make_deploy_rule,
+    make_get_validated_rules,
     make_record_iteration,
     make_trigger_attacker,
     make_validate_rule_syntax,
 )
+from rules_farmer.validated_rules import ValidatedRulesStore
 
 
 logger = logging.getLogger(__name__)
@@ -40,21 +42,31 @@ You drive ONE variant cycle. The orchestrator calls you with a payload of:
 - request_variant: True for variant cycles
 - max_internal_attempts: rule regeneration budget for this cycle
 - previous_iterations: previous cycles in this experiment (their final rules and outcomes)
-- fixed_destination: {ip, port} resolved by intent preprocessing — the testbed's target service
-  address for this attack family (MQTT → port 1883, XRCE → port 8888). This is the destination
-  IP/port your Snort rule MUST match against. NEVER invent a different IP or port.
+- fixed_destination: {ip, port} resolved by intent preprocessing. This information is metadata
+  ONLY — it tells you which attack family this is. You MUST NOT bake the IP or port into the
+  Snort rule header.
+
+HARD CONSTRAINT — RULE HEADER:
+- The rule header MUST be exactly: `<action> <proto> any any -> any any (options;)`
+- NEVER use a specific source IP, source port, destination IP, or destination port in the header.
+- All targeting MUST live inside the rule options (content, dsize, flow, detection_filter, etc).
+- This is non-negotiable. Rules that include a concrete IP or port in the header will be rejected.
 
 Tools available (live operations):
+- get_validated_rules(attack_id) — list of rules that already fired in past experiments for this
+  attack family. ALWAYS call this BEFORE generating a new rule. If non-empty, try the most recent
+  validated rule first (reset sid to 0, bump rev to 1).
 - validate_rule_syntax(rule) — check syntax against the IDS host
 - assign_sid(intent, rule) — replace sid:0; with a unique SID; returns {"sid", "rule"}
 - deploy_rule(rule_with_sid) — push to IDS and restart Snort
 - trigger_attacker(intent, rule, sid, request_variant, previous_attacks) — invoke the Attack Agent
 - check_alert_fired(sid) — read the IDS alert log for this SID
-- record_iteration(...) — persist this attempt to metrics.csv and experiment.json
+- record_iteration(...) — persist this attempt to metrics.csv and experiment.json. When fired=True
+  the rule is also appended to the validated-rules library for future runs.
 
 Skills available (browse <skills_system> and load with get_skill_instructions when relevant):
-- Workflow: snort-rule-generation, rule-validation-workflow, rule-deployment, alert-interpretation,
-  iteration-recording, experiment-cycle.
+- Workflow: validated-rules-library (READ FIRST), snort-rule-generation, rule-validation-workflow,
+  rule-deployment, alert-interpretation, iteration-recording, experiment-cycle.
 - Per-attack refinement playbooks: mqtt-bruteforce, mqtt-lwt-abuse, mqtt-publisher-flood,
   mqtt-qos-amplification, xrce-dds-entity-flood, xrce-dds-fragment-abuse, xrce-dds-malformed-inject,
   xrce-dds-session-hijack, xrce-dds-time-desync, xrce-dds-udp-dos. When the intent maps to one of
@@ -62,8 +74,9 @@ Skills available (browse <skills_system> and load with get_skill_instructions wh
   your first rule — it contains the detection hypotheses and evasion variants that will defeat
   naive rules.
 
-For your first cycle, start by loading get_skill_instructions("experiment-cycle") and
-get_skill_instructions("snort-rule-generation"). Re-read references when uncertain.
+For your first cycle, start by loading get_skill_instructions("experiment-cycle"),
+get_skill_instructions("validated-rules-library"), and get_skill_instructions("snort-rule-generation").
+Re-read references when uncertain.
 
 Return an IterationResult describing the FINAL state of this cycle:
 - fired (True/False), final_rule, final_sid
@@ -83,6 +96,7 @@ class RulesAgent:
         monitor: IDSMonitor,
         attacker_agent: AttackerAgent,
         recorder: ExperimentRecorder,
+        validated_rules_store: ValidatedRulesStore,
     ):
         self._context = RunContext()
         self._agent = Agent(
@@ -101,7 +115,8 @@ class RulesAgent:
                 make_deploy_rule(injector),
                 make_trigger_attacker(attacker_agent, self._context),
                 make_check_alert_fired(monitor),
-                make_record_iteration(recorder, self._context),
+                make_record_iteration(recorder, self._context, validated_rules_store),
+                make_get_validated_rules(validated_rules_store),
             ],
             output_schema=IterationResult,
         )

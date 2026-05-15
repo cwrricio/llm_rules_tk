@@ -9,6 +9,23 @@ metadata:
 
 Use this skill to author Snort 3.9.7.0 rules that the Rules Farmer testbed will deploy against the live IDS.
 
+## ⚠️ HARD CONSTRAINT — RULE HEADER
+
+**THE RULE HEADER MUST BE EXACTLY `any any -> any any`.**
+
+- **DO NOT** include a source IP, source port, destination IP, or destination port in the header.
+- Use the form: `alert <proto> any any -> any any (options;)`
+- All targeting (destination port, protocol-specific markers, payload shape) MUST live INSIDE the
+  rule options — never in the header.
+- Rules that bake an IP or port into the header will be REJECTED by the validator.
+- Examples:
+  - ✅ `alert udp any any -> any any (msg:"…"; dsize:>1000; sid:0; rev:1;)`
+  - ❌ `alert udp any any -> 192.168.137.1 8888 (msg:"…"; sid:0; rev:1;)`
+  - ❌ `alert tcp any any -> any 1883 (msg:"…"; sid:0; rev:1;)`
+  - ❌ `alert udp 10.0.0.0/8 any -> any any (msg:"…"; sid:0; rev:1;)`
+
+This rule applies to EVERY attack family (MQTT, XRCE-DDS, anything else).
+
 ## When to Use
 
 - The operator has stated an intent and no rule has been generated yet.
@@ -17,6 +34,7 @@ Use this skill to author Snort 3.9.7.0 rules that the Rules Farmer testbed will 
 
 ## Mandatory Behavior
 
+- The rule header MUST be `<action> <proto> any any -> any any` (see HARD CONSTRAINT above).
 - Always emit `sid:0;` as a placeholder. The `assign_sid` tool replaces it with a real SID before deployment.
 - Always set `rev:1;` on the first iteration. Increment `rev` on every regeneration of the same logical rule.
 - The `msg` field MUST contain the operator intent verbatim — this is how downstream tooling correlates alerts with intents.

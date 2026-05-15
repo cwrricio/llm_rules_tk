@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from agno.tools import tool
 
 from rules_farmer.experiment_recorder import ExperimentRecorder
+from rules_farmer.validated_rules import ValidatedRulesStore
 
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,11 @@ class RunContext:
     fixed_destination_port: int | None = None
 
 
-def make_record_iteration(recorder: ExperimentRecorder, context: RunContext):
+def make_record_iteration(
+    recorder: ExperimentRecorder,
+    context: RunContext,
+    validated_rules_store: ValidatedRulesStore | None = None,
+):
     @tool
     def record_iteration(
         iteration: int,
@@ -75,6 +80,45 @@ def make_record_iteration(recorder: ExperimentRecorder, context: RunContext):
             container_exit_code=container_exit_code,
             container_stderr=container_stderr,
         )
+        if fired and validated_rules_store is not None and rule:
+            try:
+                added = validated_rules_store.save(attack_id=attack_id, rule=rule)
+                if added:
+                    logger.info(
+                        "Validated rule saved to library attack_id=%s experiment_id=%s",
+                        attack_id,
+                        context.experiment_id,
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to persist validated rule attack_id=%s", attack_id
+                )
         return "recorded"
 
     return record_iteration
+
+
+def make_get_validated_rules(validated_rules_store: ValidatedRulesStore):
+    @tool
+    def get_validated_rules(attack_id: str) -> list[str]:
+        """Return previously-validated Snort rules for the given attack_id.
+
+        These are rules that have already fired against the IDS in past experiments. Try them
+        FIRST (with a fresh sid:0 placeholder) before generating a new rule for the same
+        attack family — they are known-good detection patterns.
+
+        Args:
+            attack_id: The attack identifier (e.g. "xrce-dds-udp-dos", "mqtt-bruteforce").
+
+        Returns:
+            A list of canonicalized rule strings (sid:0; rev:1;). Empty list if none yet.
+        """
+        rules = validated_rules_store.load(attack_id)
+        logger.info(
+            "get_validated_rules called attack_id=%s count=%s",
+            attack_id,
+            len(rules),
+        )
+        return rules
+
+    return get_validated_rules

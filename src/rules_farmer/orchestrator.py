@@ -32,11 +32,13 @@ class Orchestrator:
         recorder: ExperimentRecorder,
         attack_destinations: AttackDestinationsConfig,
         experiment_id_factory: Callable[[], str] | None = None,
+        continue_on_failure: bool = False,
     ):
         self.rules_agent = rules_agent
         self.recorder = recorder
         self.attack_destinations = attack_destinations
         self.experiment_id_factory = experiment_id_factory or (lambda: str(uuid.uuid4()))
+        self.continue_on_failure = continue_on_failure
 
     def run_experiment(
         self,
@@ -59,6 +61,7 @@ class Orchestrator:
         self.recorder.initialize_experiment(experiment_id, intent)
 
         previous_iterations: list[IterationResult] = []
+        any_failed = False
         try:
             for variant_index in range(variant_count + 1):
                 label = "base" if variant_index == 0 else f"variant_{variant_index}"
@@ -80,9 +83,18 @@ class Orchestrator:
                 )
                 previous_iterations.append(result)
                 if not result.fired:
-                    log_stage(f"VARIANTE {label.upper()} NAO DETECTADA - EXPERIMENTO FALHOU")
-                    return self._finalize(experiment_id, converged=False, status="failed")
+                    any_failed = True
+                    log_stage(f"VARIANTE {label.upper()} NAO DETECTADA")
+                    if not self.continue_on_failure:
+                        log_stage("EXPERIMENTO FALHOU - PARANDO")
+                        return self._finalize(experiment_id, converged=False, status="failed")
+                    logger.info(
+                        "continue_on_failure=True - prosseguindo para proximo ciclo apesar da falha"
+                    )
 
+            if any_failed:
+                log_stage("EXPERIMENTO FINALIZOU COM FALHAS PARCIAIS")
+                return self._finalize(experiment_id, converged=False, status="partial")
             log_stage("EXPERIMENTO CONVERGIU")
             return self._finalize(experiment_id, converged=True, status="converged")
         except Exception as exc:

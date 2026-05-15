@@ -18,6 +18,7 @@ from rules_farmer.ids_rule_validator import SnortRuleValidator
 from rules_farmer.orchestrator import Orchestrator
 from rules_farmer.sid_manager import SIDManager
 from rules_farmer.ssh import SSHClient
+from rules_farmer.validated_rules import ValidatedRulesStore
 
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,9 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         mapping_path=config.testbed.sid_mapping_file_path,
     )
     recorder = ExperimentRecorder(output_dir=config.testbed.results_output_dir)
+    validated_rules_store = ValidatedRulesStore(
+        root=config.testbed.validated_rules_dir
+    )
 
     injector.ensure_rules_file()
 
@@ -118,6 +122,7 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         monitor=monitor,
         attacker_agent=attacker_agent,
         recorder=recorder,
+        validated_rules_store=validated_rules_store,
     )
 
     experiment_id_factory = ExperimentIDFactory(config.testbed.experiment_counter_file_path)
@@ -127,6 +132,7 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         recorder=recorder,
         attack_destinations=config.attack_destinations,
         experiment_id_factory=experiment_id_factory,
+        continue_on_failure=config.experiment_defaults.continue_on_failure,
     )
 
     logger.debug(

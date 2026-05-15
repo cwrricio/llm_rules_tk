@@ -48,6 +48,7 @@ def _build_agent(stub_response: IterationResult, attacker_agent: Any | None = No
         monitor=MagicMock(),
         attacker_agent=attacker_agent or MagicMock(),
         recorder=MagicMock(),
+        validated_rules_store=MagicMock(),
     )
     agent._agent = MagicMock()  # type: ignore[attr-defined]
     agent._agent.run.return_value = _StubResponse(content=stub_response)
@@ -203,6 +204,7 @@ def test_rules_agent_has_expected_tools_and_skills():
         monitor=MagicMock(),
         attacker_agent=MagicMock(),
         recorder=MagicMock(),
+        validated_rules_store=MagicMock(),
     )
 
     tool_names = [tool.name for tool in fresh._agent.tools]
@@ -213,6 +215,7 @@ def test_rules_agent_has_expected_tools_and_skills():
         "trigger_attacker",
         "check_alert_fired",
         "record_iteration",
+        "get_validated_rules",
     ]
 
     skill_names = set(fresh._agent.skills.get_skill_names())

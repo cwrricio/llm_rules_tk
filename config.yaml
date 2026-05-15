@@ -32,7 +32,8 @@ attack_plan_validation:
 
 experiment_defaults:
   max_iterations: 10
-  variant_count: 1
+  variant_count: 49
+  continue_on_failure: true
 
 testbed:
   ids_alert_log_path: /home/gtiotedu/ataques-regras-e-assinaturas/snort/logs/alert_fast.txt
@@ -46,6 +47,7 @@ testbed:
   sid_counter_file_path: ./data/sid_counter.json
   experiment_counter_file_path: ./data/experiment_counter.json
   results_output_dir: ./results
+  validated_rules_dir: ./data/validated_rules
 
 # Fixed destination per attack family. Agents NEVER mutate these values; if the chosen attack
 # accepts port as a positional argument, that argument MUST be set to the configured port.

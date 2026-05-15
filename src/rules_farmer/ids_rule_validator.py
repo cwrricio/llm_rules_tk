@@ -25,6 +25,12 @@ _RULE_STRUCTURE_RE = re.compile(
     re.DOTALL,
 )
 
+# Hard constraint: rule header must be `<action> <proto> any any -> any any (`.
+# Anything else (concrete IPs, ports, CIDR ranges, variables) is rejected.
+_RULE_HEADER_ANY_RE = re.compile(
+    r"^\s*\w+\s+\w+\s+any\s+any\s+->\s+any\s+any\s*\(",
+)
+
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -95,6 +101,16 @@ class SnortRuleValidator:
                 error=(
                     "Rule does not match expected Snort 3 structure: "
                     "action proto src_ip src_port direction dst_ip dst_port (options;)"
+                ),
+            )
+
+        if not _RULE_HEADER_ANY_RE.match(rule_stripped):
+            return ValidationResult(
+                valid=False,
+                error=(
+                    "Rule header must be exactly `<action> <proto> any any -> any any (...)`. "
+                    "Concrete source/destination IPs or ports are FORBIDDEN — move targeting "
+                    "into rule options (content, dsize, flow, detection_filter, etc)."
                 ),
             )
 

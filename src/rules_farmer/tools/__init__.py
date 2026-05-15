@@ -9,7 +9,11 @@ from rules_farmer.tools.attack_tools import (
 )
 from rules_farmer.tools.inter_agent_tools import make_trigger_attacker
 from rules_farmer.tools.monitor_tools import make_check_alert_fired
-from rules_farmer.tools.persistence_tools import RunContext, make_record_iteration
+from rules_farmer.tools.persistence_tools import (
+    RunContext,
+    make_get_validated_rules,
+    make_record_iteration,
+)
 from rules_farmer.tools.rule_tools import (
     make_assign_sid,
     make_deploy_rule,
@@ -22,6 +26,7 @@ __all__ = [
     "make_check_alert_fired",
     "make_deploy_rule",
     "make_execute_attack",
+    "make_get_validated_rules",
     "make_list_attack_files",
     "make_list_available_attacks",
     "make_modify_attack_file",

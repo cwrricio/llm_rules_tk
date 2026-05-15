@@ -59,6 +59,7 @@ class ExperimentDefaultsConfig(BaseModel):
 
     max_iterations: int
     variant_count: int
+    continue_on_failure: bool = False
 
 
 class AttackDestination(BaseModel):
@@ -100,6 +101,7 @@ class TestbedConfig(BaseModel):
     attacker_attacks_root: str
     attacker_capture_interface: str = "any"
     results_output_dir: str
+    validated_rules_dir: str = "./data/validated_rules"
 
 
 class Config(BaseModel):
