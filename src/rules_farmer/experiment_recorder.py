@@ -13,6 +13,17 @@ ExecutionType = Literal["base", "variant"]
 
 logger = logging.getLogger(__name__)
 
+_CSV_FIELDS = [
+    "iteration",
+    "execution_type",
+    "attack_id",
+    "arguments",
+    "container_exit_code",
+    "fired",
+    "evasion_rationale",
+    "rule",
+]
+
 
 class ExperimentIDFactory:
     """Generates sequential zero-padded experiment IDs (0001, 0002, …) persisted in a counter file."""
@@ -64,6 +75,11 @@ class ExperimentRecorder:
                 "executions": [],
             },
         )
+        # Create the CSV immediately with the header so it exists from the first iteration.
+        csv_path = self._csv_path(experiment_id)
+        with csv_path.open("w", encoding="utf-8", newline="") as f:
+            csv.DictWriter(f, fieldnames=_CSV_FIELDS).writeheader()
+        logger.debug("CSV initialized path=%s", csv_path)
 
     def record_execution(
         self,
@@ -87,7 +103,6 @@ class ExperimentRecorder:
             fired,
             container_exit_code,
         )
-        experiment = self._read_experiment(experiment_id)
         execution: dict[str, Any] = {
             "iteration": iteration,
             "execution_type": execution_type,
@@ -103,16 +118,26 @@ class ExperimentRecorder:
                 "fired": fired,
             },
         }
+
+        # Persist to JSON first (source of truth).
+        experiment = self._read_experiment(experiment_id)
         experiment["executions"].append(execution)
         self._write_experiment(experiment_id, experiment)
+
+        # Append one row to the CSV immediately — no data loss if the process crashes later.
+        self._append_csv_row(experiment_id, execution)
 
     def finalize(self, experiment_id: str, converged: bool) -> ExperimentArtifacts:
         logger.info("Finalizing experiment record experiment_id=%s converged=%s", experiment_id, converged)
         experiment = self._read_experiment(experiment_id)
         experiment["status"] = "converged" if converged else "failed"
         self._write_experiment(experiment_id, experiment)
-        csv_path = self._write_metrics_csv(experiment_id, experiment)
-
+        # CSV is already up-to-date (written row-by-row during record_execution).
+        # Rebuild from JSON only as a safety net if the file is missing or empty.
+        csv_path = self._csv_path(experiment_id)
+        if not csv_path.exists() or csv_path.stat().st_size == 0:
+            logger.warning("CSV missing at finalize — rebuilding from JSON experiment_id=%s", experiment_id)
+            self._rebuild_csv_from_json(experiment_id, experiment)
         return ExperimentArtifacts(
             json_path=self._json_path(experiment_id),
             csv_path=csv_path,
@@ -131,54 +156,67 @@ class ExperimentRecorder:
             "message": str(error),
         }
         self._write_experiment(experiment_id, experiment)
-        csv_path = self._write_metrics_csv(experiment_id, experiment)
-
+        csv_path = self._csv_path(experiment_id)
+        if not csv_path.exists() or csv_path.stat().st_size == 0:
+            logger.warning("CSV missing at finalize_error — rebuilding from JSON experiment_id=%s", experiment_id)
+            self._rebuild_csv_from_json(experiment_id, experiment)
         return ExperimentArtifacts(
             json_path=self._json_path(experiment_id),
             csv_path=csv_path,
         )
 
-    def _write_metrics_csv(
-        self, experiment_id: str, experiment: dict[str, Any]
-    ) -> Path:
-        csv_path = self._experiment_dir(experiment_id) / "metrics.csv"
-        with csv_path.open("w", encoding="utf-8", newline="") as csv_file:
-            writer = csv.DictWriter(
-                csv_file,
-                fieldnames=[
-                    "iteration",
-                    "execution_type",
-                    "attack_id",
-                    "arguments",
-                    "container_exit_code",
-                    "fired",
-                    "evasion_rationale",
-                    "rule",
-                ],
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _append_csv_row(self, experiment_id: str, execution: dict[str, Any]) -> None:
+        """Append a single execution row to the CSV immediately after it is persisted to JSON."""
+        csv_path = self._csv_path(experiment_id)
+        # Write header if the file was somehow lost between initialize and this call.
+        need_header = not csv_path.exists() or csv_path.stat().st_size == 0
+        try:
+            with csv_path.open("a", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
+                if need_header:
+                    writer.writeheader()
+                writer.writerow(self._execution_to_row(execution))
+                f.flush()
+        except Exception:
+            logger.exception(
+                "Failed to append CSV row experiment_id=%s iteration=%s — data is safe in JSON",
+                experiment_id,
+                execution.get("iteration"),
             )
+
+    def _rebuild_csv_from_json(self, experiment_id: str, experiment: dict[str, Any]) -> None:
+        """Write the full CSV from the JSON executions list (fallback path only)."""
+        csv_path = self._csv_path(experiment_id)
+        with csv_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
             writer.writeheader()
-            for execution in experiment["executions"]:
-                attacker = execution.get("attacker", {})
-                victim = execution.get("victim", {})
-                # support old-format records that lack the nested structure
-                writer.writerow(
-                    {
-                        "iteration": execution["iteration"],
-                        "execution_type": execution["execution_type"],
-                        "attack_id": attacker.get("attack_id", execution.get("attack_id", "")),
-                        "arguments": json.dumps(
-                            attacker.get("arguments", execution.get("arguments", [])),
-                            separators=(",", ":"),
-                        ),
-                        "container_exit_code": attacker.get("container_exit_code", ""),
-                        "fired": str(victim.get("fired", execution.get("fired", ""))).lower(),
-                        "evasion_rationale": attacker.get(
-                            "evasion_rationale", execution.get("evasion_rationale", "")
-                        ),
-                        "rule": victim.get("rule", ""),
-                    }
-                )
-        return csv_path
+            for execution in experiment.get("executions", []):
+                writer.writerow(self._execution_to_row(execution))
+        logger.info("CSV rebuilt from JSON experiment_id=%s path=%s", experiment_id, csv_path)
+
+    @staticmethod
+    def _execution_to_row(execution: dict[str, Any]) -> dict[str, Any]:
+        attacker = execution.get("attacker", {})
+        victim = execution.get("victim", {})
+        return {
+            "iteration": execution["iteration"],
+            "execution_type": execution["execution_type"],
+            "attack_id": attacker.get("attack_id", execution.get("attack_id", "")),
+            "arguments": json.dumps(
+                attacker.get("arguments", execution.get("arguments", [])),
+                separators=(",", ":"),
+            ),
+            "container_exit_code": attacker.get("container_exit_code", ""),
+            "fired": str(victim.get("fired", execution.get("fired", ""))).lower(),
+            "evasion_rationale": attacker.get(
+                "evasion_rationale", execution.get("evasion_rationale", "")
+            ),
+            "rule": victim.get("rule", ""),
+        }
 
     def _read_experiment(self, experiment_id: str) -> dict[str, Any]:
         return json.loads(self._json_path(experiment_id).read_text(encoding="utf-8"))
@@ -193,6 +231,9 @@ class ExperimentRecorder:
 
     def _json_path(self, experiment_id: str) -> Path:
         return self._experiment_dir(experiment_id) / "experiment.json"
+
+    def _csv_path(self, experiment_id: str) -> Path:
+        return self._experiment_dir(experiment_id) / "metrics.csv"
 
     def _experiment_dir(self, experiment_id: str) -> Path:
         return self.output_dir / experiment_id

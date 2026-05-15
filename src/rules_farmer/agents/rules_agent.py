@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from agno.agent import Agent
@@ -51,6 +52,19 @@ HARD CONSTRAINT — RULE HEADER:
 - NEVER use a specific source IP, source port, destination IP, or destination port in the header.
 - All targeting MUST live inside the rule options (content, dsize, flow, detection_filter, etc).
 - This is non-negotiable. Rules that include a concrete IP or port in the header will be rejected.
+
+HARD CONSTRAINT — RULE SPECIFICITY (NO FALSE POSITIVES):
+- Every rule MUST contain at least one protocol-specific payload match (content, pcre, or dsize
+  range) that anchors the rule to characteristics unique to the requested attack.
+- A rule that uses ONLY `detection_filter` with no payload matching is FORBIDDEN.
+- A rule that would fire on normal, legitimate traffic of the same protocol is FORBIDDEN.
+- Example of a FORBIDDEN generic rule:
+    alert udp any any -> any any (msg:"xrce-dds-udp-dos"; detection_filter:track by_dst, count 2, seconds 60; sid:0; rev:1;)
+  This fires on any UDP traffic to the server — no attack-specific characteristics, massive false positives.
+- Before generating a rule, load the per-attack playbook and extract the protocol fingerprint from
+  section 2 (Hipóteses de Detecção). Use that as the payload match anchor.
+- ALWAYS use `detection_filter:track by_src` (per source), never `track by_dst` (which aggregates
+  all clients together and fires on normal load).
 
 Tools available (live operations):
 - get_validated_rules(attack_id) — list of rules that already fired in past experiments for this
@@ -135,6 +149,7 @@ class RulesAgent:
         self._context.variant_label = variant_label
         self._context.fixed_destination_ip = fixed_destination_ip
         self._context.fixed_destination_port = fixed_destination_port
+        self._context.last_fired = None
 
         request_variant = variant_label != "base"
         previous_attacks_for_attacker = [
@@ -178,7 +193,37 @@ class RulesAgent:
             max_internal_attempts,
         )
         response = self._agent.run(prompt)
-        result: IterationResult = response.content
+        result = response.content
+        if isinstance(result, str):
+            logger.warning(
+                "RulesAgent response.content is str - Gemini structured output failed, "
+                "falling back to record_iteration snapshot variant_label=%s",
+                variant_label,
+            )
+            if self._context.last_fired is None:
+                try:
+                    err = json.loads(result).get("error", {})
+                    if err.get("code") or err.get("status"):
+                        raise RuntimeError(
+                            f"Gemini API error {err.get('code', '?')} "
+                            f"{err.get('status', '')}: {err.get('message', '?')}"
+                        )
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+                raise RuntimeError(
+                    "RulesAgent returned unstructured text and record_iteration was never called. "
+                    f"Response snippet: {result[:300]!r}"
+                )
+            sid_match = re.search(r"\bsid\s*:\s*(\d+)\b", self._context.last_rule or "")
+            result = IterationResult(
+                fired=self._context.last_fired,
+                final_rule=self._context.last_rule,
+                final_sid=int(sid_match.group(1)) if sid_match else None,
+                attack_id=self._context.last_attack_id,
+                arguments=list(self._context.last_arguments),
+                evasion_rationale=self._context.last_evasion_rationale,
+            )
+        result: IterationResult
         logger.info(
             "RulesAgent run_iteration finished variant_label=%s fired=%s rules_attempted=%s final_sid=%s",
             variant_label,

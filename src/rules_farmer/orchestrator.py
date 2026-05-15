@@ -46,15 +46,18 @@ class Orchestrator:
         max_iterations: int,
         variant_count: int,
         experiment_id: str | None = None,
+        convergence_threshold: int | None = None,
     ) -> ExperimentRunResult:
         experiment_id = experiment_id or self.experiment_id_factory()
         fixed = resolve_fixed_destination(intent, self.attack_destinations)
         log_stage("EXPERIMENTO INICIADO")
         logger.info(
-            "Experiment started experiment_id=%s max_iterations=%s variant_count=%s intent=%r fixed_destination=%s",
+            "Experiment started experiment_id=%s max_iterations=%s variant_count=%s "
+            "convergence_threshold=%s intent=%r fixed_destination=%s",
             experiment_id,
             max_iterations,
             variant_count,
+            convergence_threshold,
             intent,
             _fmt_destination(fixed),
         )
@@ -62,6 +65,7 @@ class Orchestrator:
 
         previous_iterations: list[IterationResult] = []
         any_failed = False
+        consecutive_detections = 0
         try:
             for variant_index in range(variant_count + 1):
                 label = "base" if variant_index == 0 else f"variant_{variant_index}"
@@ -82,7 +86,29 @@ class Orchestrator:
                     fixed_destination_port=fixed.port if fixed else None,
                 )
                 previous_iterations.append(result)
-                if not result.fired:
+                if result.fired:
+                    if variant_index > 0:
+                        consecutive_detections += 1
+                        logger.info(
+                            "Variant detected experiment_id=%s label=%s consecutive=%s threshold=%s",
+                            experiment_id,
+                            label,
+                            consecutive_detections,
+                            convergence_threshold,
+                        )
+                        if (
+                            convergence_threshold is not None
+                            and consecutive_detections >= convergence_threshold
+                        ):
+                            log_stage("EXPERIMENTO CONVERGIU ANTECIPADAMENTE")
+                            logger.info(
+                                "Early convergence reached experiment_id=%s after %s consecutive detections",
+                                experiment_id,
+                                consecutive_detections,
+                            )
+                            return self._finalize(experiment_id, converged=True, status="converged")
+                else:
+                    consecutive_detections = 0
                     any_failed = True
                     log_stage(f"VARIANTE {label.upper()} NAO DETECTADA")
                     if not self.continue_on_failure:

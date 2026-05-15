@@ -1,70 +1,122 @@
 # Common Snort 3.9.7.0 Rule Patterns
 
-Worked examples by attack class. Adapt the IP, port, and msg to the operator intent before emitting.
+Worked examples by attack class. All headers use `any any -> any any` — targeting lives in the options.
 
-## UDP Flood / DoS (rate-based)
-
-Intent: detect a UDP flood targeting host:port.
+## ⛔ Anti-Pattern: Generic Rate-Only Rule (NEVER DO THIS)
 
 ```
-alert udp any any -> 172.17.0.2 8888 (msg:"Detect XRCE-DDS UDP DoS against 172.17.0.2 port 8888"; detection_filter:track by_src, count 100, seconds 1; sid:0; rev:1;)
+# WRONG — fires on any UDP traffic, no attack-specific fingerprint:
+alert udp any any -> any any (msg:"..."; detection_filter:track by_dst, count 2, seconds 60; sid:0; rev:1;)
+```
+
+Problems: `by_dst` counts all UDP from all clients together; `count 2` fires on any normal interaction;
+no content match means it alerts on completely unrelated traffic. This type of rule is rejected.
+
+---
+
+## UDP DoS — Protocol Fingerprint + Rate (XRCE-DDS / RTPS ping flood)
+
+The attack sends RTPS ping packets at high rate from a single source. Normal DDS clients also send
+RTPS but at a much lower rate. The rule must anchor on the RTPS magic bytes AND require a
+per-source rate that only the flooding attacker reaches.
+
+```
+alert udp any any -> any any (msg:"xrce-dds-udp-dos RTPS ping flood"; content:"|52 54 50 53|",offset 0,depth 4; dsize:<200; detection_filter:track by_src, count 500, seconds 1; sid:0; rev:1;)
 ```
 
 Key points:
 
-- `flow` is omitted (UDP, rate-based).
-- `detection_filter` distinguishes a flood from legitimate traffic.
+- `content:"|52 54 50 53|",offset 0,depth 4` — matches the RTPS magic bytes at the start of the
+  payload. Legitimate DDS traffic also has this, but a legitimate client does NOT send 500+ packets
+  per second to the same service.
+- `dsize:<200` — ping packets are ~60 bytes; this excludes bulk DATA messages from normal publishers.
+- `detection_filter:track by_src, count 500, seconds 1` — 500 pps from a single source is the flood,
+  not normal operation. Use `by_src`, never `by_dst` (which aggregates all clients).
+
+Variant when flooding uses smaller packets to evade dsize:
+
+```
+alert udp any any -> any any (msg:"xrce-dds-udp-dos RTPS flood no-dsize"; content:"|52 54 50 53|",offset 0,depth 4; detection_filter:track by_src, count 1000, seconds 2; sid:0; rev:1;)
+```
+
+---
+
+## UDP DoS — MQTT Flood (CONNECT storm)
+
+MQTT CONNECT packet starts with fixed byte `|10|` (packet type 1, connect). A flood of CONNECTs
+from the same source saturates the broker.
+
+```
+alert tcp any any -> any any (msg:"mqtt-publisher-flood CONNECT storm"; content:"|10|",offset 0,depth 1; detection_filter:track by_src, count 200, seconds 10; sid:0; rev:1;)
+```
+
+---
 
 ## TCP SYN Scan
 
-Intent: detect TCP SYN scan against target.
+```
+alert tcp any any -> any any (msg:"TCP SYN scan"; flags:S; detection_filter:track by_src, count 20, seconds 10; sid:0; rev:1;)
+```
 
-```
-alert tcp any any -> 172.17.0.2 any (msg:"Detect TCP SYN scan against 172.17.0.2"; flags:S; detection_filter:track by_src, count 20, seconds 10; sid:0; rev:1;)
-```
+No payload content needed here because the SYN flag pattern is itself specific to scanning behavior
+at the rate threshold.
+
+---
 
 ## Payload Match (binary signature)
 
-Intent: detect packet containing RTPS magic bytes.
+Detect any RTPS packet (magic bytes at offset 0):
 
 ```
-alert udp any any -> 172.17.0.2 8888 (msg:"Detect RTPS magic in payload"; content:"|52 54 50 53|",offset 0,depth 4; sid:0; rev:1;)
+alert udp any any -> any any (msg:"RTPS protocol traffic"; content:"|52 54 50 53|",offset 0,depth 4; sid:0; rev:1;)
 ```
+
+---
 
 ## Payload Match (ASCII)
 
-Intent: detect packet containing the literal string "exploit".
+```
+alert tcp any any -> any any (msg:"Detect 'exploit' literal"; content:"exploit",nocase; sid:0; rev:1;)
+```
 
-```
-alert tcp any any -> 172.17.0.2 any (msg:"Detect 'exploit' literal"; content:"exploit",nocase; sid:0; rev:1;)
-```
+---
 
 ## HTTP-Aware Match
 
-Intent: detect HTTP GET to a specific URI.
+```
+alert tcp any any -> any any (msg:"Detect GET /admin"; http_method:"GET"; http_uri:"/admin"; sid:0; rev:1;)
+```
 
-```
-alert tcp any any -> 172.17.0.2 80 (msg:"Detect GET /admin"; http_method:"GET"; http_uri:"/admin"; sid:0; rev:1;)
-```
+---
 
 ## Large Packet (dsize)
 
-Intent: detect oversized packets to a UDP service.
+Detect oversized UDP packets that could indicate fragmentation abuse or data exfiltration:
 
 ```
-alert udp any any -> 172.17.0.2 8888 (msg:"Detect oversized UDP packets"; dsize:>1400; sid:0; rev:1;)
+alert udp any any -> any any (msg:"Oversized UDP packet"; dsize:>1400; sid:0; rev:1;)
 ```
+
+---
 
 ## Fragmented Packets
 
 ```
-alert ip any any -> 172.17.0.2 any (msg:"Detect IP fragments"; fragbits:M; sid:0; rev:1;)
+alert ip any any -> any any (msg:"IP fragment detected"; fragbits:M; sid:0; rev:1;)
 ```
+
+---
 
 ## Notes on Refinement
 
 When a rule does NOT fire and you must regenerate:
 
-- If `container_exit_code == 0` and the rule did not fire, the matcher is too narrow — broaden the matching options, drop overly specific content matches, or relax the detection_filter threshold.
-- If `container_exit_code != 0`, the attack container errored before producing the expected traffic — the issue is at the attacker layer, not the rule. Look at `container_stderr` and report the diagnosis instead of looping on rule changes.
-- If `validation_error` says the syntax is wrong, fix syntax per `snort3-syntax-cheatsheet.md` and bump `rev`.
+- If `container_exit_code == 0` and the rule did not fire, the payload match may be too specific
+  (wrong bytes, wrong offset) or the rate threshold too high — inspect `container_stderr` for
+  packet sizes and rates actually generated by the attack, then adjust.
+- If `container_exit_code != 0`, the attack container errored before producing traffic — the issue
+  is at the attacker layer, not the rule. Report the diagnosis; do not loop on rule changes.
+- If `validation_error` says the syntax is wrong, fix syntax per `snort3-syntax-cheatsheet.md`
+  and bump `rev`.
+- NEVER respond to a missed detection by removing payload matching and falling back to rate-only.
+  Instead, investigate what payload the attack actually sends and match that.

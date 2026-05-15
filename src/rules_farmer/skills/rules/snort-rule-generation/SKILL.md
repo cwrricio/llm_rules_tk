@@ -32,27 +32,53 @@ This rule applies to EVERY attack family (MQTT, XRCE-DDS, anything else).
 - The current deployed rule failed to detect an attack and you need a refined version.
 - A previous rule was rejected by `validate_rule_syntax` and you must regenerate.
 
+## ⛔ ANTI-PATTERN: Generic Rate-Only Rules
+
+**A rule that uses only `detection_filter` without protocol-specific payload matching is FORBIDDEN as a first attempt.**
+
+Generic rate-based rules like the example below MUST NOT be generated:
+
+```
+# FORBIDDEN — fires on any UDP traffic, causes massive false positives:
+alert udp any any -> any any (msg:"..."; detection_filter:track by_dst, count 2, seconds 60; sid:0; rev:1;)
+```
+
+Why this is wrong:
+- `track by_dst` groups ALL UDP packets to the server, not just attack traffic — any legitimate client triggers it.
+- `count 2` in 60 seconds fires on virtually any service interaction.
+- No content matching means it fires on completely unrelated UDP traffic.
+- It does not capture any characteristic of the actual attack being detected.
+
+`detection_filter` is a supplementary mechanism. It MUST be combined with payload or protocol-specific matchers that anchor the rule to the attack being detected.
+
+## ⚠️ FALSE POSITIVE PREVENTION
+
+Before emitting any rule, ask: "Would this rule fire on legitimate traffic from a real client using this protocol?"
+
+If yes, the rule is too generic. Add specificity through:
+- **Protocol fingerprint** (`content:"|52 54 50 53|"` for RTPS, `content:"|10|"` for MQTT CONNECT, etc.)
+- **Behavioral signature** (combination of message type, size range, and rate that is only plausible during the attack)
+- **Rate by source** (`detection_filter:track by_src`) — a single client sending 500,000 packets is the attack, not the service receiving them
+
 ## Mandatory Behavior
 
 - The rule header MUST be `<action> <proto> any any -> any any` (see HARD CONSTRAINT above).
 - Always emit `sid:0;` as a placeholder. The `assign_sid` tool replaces it with a real SID before deployment.
 - Always set `rev:1;` on the first iteration. Increment `rev` on every regeneration of the same logical rule.
 - The `msg` field MUST contain the operator intent verbatim — this is how downstream tooling correlates alerts with intents.
-- Prefer simple, syntactically valid rules first. Add payload-specific matching only when the simple version fails.
+- The **first rule for any known attack family MUST contain at least one protocol-specific content or pcre match** derived from the attack's payload structure. Pure rate-based rules are only acceptable as a last resort after payload-matched rules have been exhausted.
 - When the intent is ambiguous, produce multiple rules instead of one best guess.
 
 ## Process
 
-1. Parse the operator intent to extract: target IP, target port, protocol, attack class, and any payload hints.
-2. Choose the simplest Snort 3 rule that captures the intent.
-3. Format it according to the Snort 3.9.7.0 grammar in `references/snort3-syntax-cheatsheet.md`.
-4. If you have prior feedback (container_stderr, ids_logs, validation_error), incorporate it into your revision.
-5. Return one or more candidate rules.
-
-## References
-
-- `references/snort3-syntax-cheatsheet.md` — Complete syntax reference for Snort 3.9.7.0 (mandatory read before writing your first rule).
-- `references/common-rule-patterns.md` — Worked examples for common attack classes (DoS, scan, payload match).
+1. Load the per-attack refinement playbook (`get_skill_instructions("<attack_id>")`) BEFORE writing any rule. Extract the protocol fingerprint and detection hypotheses from section 2 (Hipóteses de Detecção).
+2. Parse the operator intent to extract: protocol, attack class, payload characteristics, and behavioral patterns.
+3. Build a rule that combines:
+   a. A **protocol-specific payload match** (content bytes, pcre, dsize range) that identifies this attack's traffic structure.
+   b. A **rate or behavioral filter** (`detection_filter:track by_src`) calibrated so legitimate single clients do not trigger it.
+4. Format it according to the Snort 3.9.7.0 grammar in `references/snort3-syntax-cheatsheet.md`.
+5. If you have prior feedback (container_stderr, ids_logs, validation_error), incorporate it into your revision.
+6. Return one or more candidate rules.
 
 ## Output Format
 

@@ -9,7 +9,7 @@ config.yaml -> experiment_defaults.variant_count (set to 49, so each experiment 
 continue_on_failure=true mode so all 50 cycles execute even if some don't fire.
 
 Validated rules (those that produced fired=True) are accumulated across runs in
-data/validated_rules/<attack_id>.rules and consulted by the Rules Agent BEFORE
+data/validated_rules/all_validated_rules.rules and consulted by the Rules Agent BEFORE
 generating a new rule for the same attack family.
 
 .EXAMPLE
@@ -37,14 +37,14 @@ $LogDir = if ([string]::IsNullOrEmpty($env:LOG_DIR)) { Join-Path $ProjectDir "ou
 $DefaultAttacks = @(
     "xrce-dds-udp-dos",
     "xrce-dds-entity-flood",
-    "xrce-dds-fragment-abuse",
-    "xrce-dds-malformed-inject",
-    "xrce-dds-session-hijack",
-    "xrce-dds-time-desync",
-    "mqtt-bruteforce",
-    "mqtt-lwt-abuse",
-    "mqtt-publisher-flood",
-    "mqtt-qos-amplification"
+    "xrce-dds-fragment-abuse"
+    # "xrce-dds-malformed-inject",
+    # "xrce-dds-session-hijack",
+    # "xrce-dds-time-desync",
+    # "mqtt-bruteforce",
+    # "mqtt-lwt-abuse",
+    # "mqtt-publisher-flood",
+    # "mqtt-qos-amplification"
 )
 
 $AttacksList = @()
@@ -84,7 +84,7 @@ foreach ($AttackId in $AttacksList) {
 
     $LASTEXITCODE = 0
     try {
-        $Intent | uv run --python 3.12 rules-farmer 2>&1 | Tee-Object -FilePath $LogFile
+        $Intent | uv run --python 3.12 rules-farmer 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $LogFile
         if ($LASTEXITCODE -ne 0) {
             $Status = "failed"
             $Failures++

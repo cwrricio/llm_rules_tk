@@ -66,6 +66,7 @@ def main(
             intent=intent,
             max_iterations=config.experiment_defaults.max_iterations,
             variant_count=config.experiment_defaults.variant_count,
+            convergence_threshold=config.experiment_defaults.convergence_threshold,
         )
         _progress(output_func, f"Status: {result.status}")
         _progress(output_func, f"JSON: {result.json_path}")

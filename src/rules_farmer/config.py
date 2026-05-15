@@ -60,6 +60,7 @@ class ExperimentDefaultsConfig(BaseModel):
     max_iterations: int
     variant_count: int
     continue_on_failure: bool = False
+    convergence_threshold: int = 5
 
 
 class AttackDestination(BaseModel):

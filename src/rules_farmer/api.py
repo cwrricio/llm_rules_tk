@@ -16,6 +16,7 @@ class ExperimentRequest(BaseModel):
     intent: str = Field(min_length=1)
     max_iterations: int | None = None
     variant_count: int | None = None
+    convergence_threshold: int | None = None
 
     @field_validator("intent")
     @classmethod
@@ -56,6 +57,7 @@ def create_app(
             request.intent,
             request.max_iterations or default_max_iterations,
             request.variant_count or default_variant_count,
+            request.convergence_threshold,
         )
         return {"experiment_id": experiment_id}
 
@@ -79,6 +81,7 @@ def _run_experiment(
     intent: str,
     max_iterations: int,
     variant_count: int,
+    convergence_threshold: int | None = None,
 ) -> None:
     try:
         logger.info("API background experiment started experiment_id=%s", experiment_id)
@@ -87,6 +90,7 @@ def _run_experiment(
             max_iterations=max_iterations,
             variant_count=variant_count,
             experiment_id=experiment_id,
+            convergence_threshold=convergence_threshold,
         )
         experiments[experiment_id] = {
             "status": result.status,

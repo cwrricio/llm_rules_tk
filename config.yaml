@@ -1,12 +1,12 @@
 llm:
   rule_agent:
-    provider: gemini
-    model: gemini-3-flash-preview
+    provider: deepseek
+    model: deepseek-v4-pro
     temperature: 0
     max_tokens: 8192
   attacker_agent:
-    provider: gemini
-    model: gemini-3-flash-preview
+    provider: deepseek
+    model: deepseek-v4-pro
     temperature: 0
     max_tokens: 8192
 
@@ -34,6 +34,7 @@ experiment_defaults:
   max_iterations: 10
   variant_count: 49
   continue_on_failure: true
+  convergence_threshold: 20
 
 testbed:
   ids_alert_log_path: /home/gtiotedu/ataques-regras-e-assinaturas/snort/logs/alert_fast.txt
