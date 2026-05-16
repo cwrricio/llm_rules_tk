@@ -196,12 +196,27 @@ class RulesAgent:
             experiment_id,
             max_internal_attempts,
         )
-        response = self._agent.run(prompt)
-        result = response.content
+        max_attempts = 3
+        result = None
+        for attempt in range(1, max_attempts + 1):
+            response = self._agent.run(prompt)
+            result = response.content
+            if isinstance(result, IterationResult):
+                break
+            logger.warning(
+                "RulesAgent attempt %s/%s returned %s instead of IterationResult "
+                "variant_label=%s. Snippet: %r",
+                attempt,
+                max_attempts,
+                type(result).__name__,
+                variant_label,
+                str(result)[:300],
+            )
         if not isinstance(result, IterationResult):
             raise RuntimeError(
-                "RulesAgent did not return a structured IterationResult "
-                f"(got {type(result).__name__}). Snippet: {str(result)[:300]!r}"
+                f"RulesAgent did not return a structured IterationResult after "
+                f"{max_attempts} attempts (got {type(result).__name__}). "
+                f"Snippet: {str(result)[:300]!r}"
             )
         logger.info(
             "RulesAgent run_iteration finished variant_label=%s fired=%s rules_attempted=%s final_sid=%s",
