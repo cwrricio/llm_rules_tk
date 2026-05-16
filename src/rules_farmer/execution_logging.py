@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import logging
 import sys
 from pathlib import Path
@@ -43,7 +44,24 @@ def configure_execution_logging(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    console_handler = logging.StreamHandler(stream or sys.stdout)
+    raw_stream = stream or sys.stdout
+    # On Windows the default stdout encoding (cp1252) can't represent Unicode block
+    # characters that container progress bars emit. Wrap with errors='replace' so
+    # unencodable chars become '?' instead of crashing the logging handler.
+    if hasattr(raw_stream, "buffer"):
+        try:
+            safe_stream: TextIO = io.TextIOWrapper(
+                raw_stream.buffer,
+                encoding=raw_stream.encoding or "utf-8",
+                errors="replace",
+                line_buffering=True,
+            )
+        except Exception:
+            safe_stream = raw_stream
+    else:
+        safe_stream = raw_stream
+
+    console_handler = logging.StreamHandler(safe_stream)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(level)
 

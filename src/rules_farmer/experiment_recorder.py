@@ -14,11 +14,10 @@ ExecutionType = Literal["base", "variant"]
 logger = logging.getLogger(__name__)
 
 _CSV_FIELDS = [
-    "iteration",
+    "rule_version",
     "execution_type",
     "attack_id",
     "arguments",
-    "container_exit_code",
     "fired",
     "evasion_rationale",
     "rule",
@@ -93,6 +92,7 @@ class ExperimentRecorder:
         rule: str | None = None,
         container_exit_code: int | None = None,
         container_stderr: str | None = None,
+        rule_version: str | None = None,
     ) -> None:
         logger.debug(
             "Recording attack execution experiment_id=%s iteration=%s execution_type=%s attack_id=%s fired=%s container_exit_code=%s",
@@ -105,6 +105,7 @@ class ExperimentRecorder:
         )
         execution: dict[str, Any] = {
             "iteration": iteration,
+            "rule_version": rule_version or f"{execution_type}_{iteration}",
             "execution_type": execution_type,
             "attacker": {
                 "attack_id": attack_id,
@@ -202,15 +203,19 @@ class ExperimentRecorder:
     def _execution_to_row(execution: dict[str, Any]) -> dict[str, Any]:
         attacker = execution.get("attacker", {})
         victim = execution.get("victim", {})
+        execution_type = execution.get("execution_type", "base")
+        iteration = execution.get("iteration", 1)
+        rule_version = execution.get(
+            "rule_version", f"{execution_type}_{iteration}"
+        )
         return {
-            "iteration": execution["iteration"],
-            "execution_type": execution["execution_type"],
+            "rule_version": rule_version,
+            "execution_type": execution_type,
             "attack_id": attacker.get("attack_id", execution.get("attack_id", "")),
             "arguments": json.dumps(
                 attacker.get("arguments", execution.get("arguments", [])),
                 separators=(",", ":"),
             ),
-            "container_exit_code": attacker.get("container_exit_code", ""),
             "fired": str(victim.get("fired", execution.get("fired", ""))).lower(),
             "evasion_rationale": attacker.get(
                 "evasion_rationale", execution.get("evasion_rationale", "")

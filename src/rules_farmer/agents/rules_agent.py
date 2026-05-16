@@ -75,8 +75,10 @@ Tools available (live operations):
 - deploy_rule(rule_with_sid) — push to IDS and restart Snort
 - trigger_attacker(intent, rule, sid, request_variant, previous_attacks) — invoke the Attack Agent
 - check_alert_fired(sid) — read the IDS alert log for this SID
-- record_iteration(...) — persist this attempt to metrics.csv and experiment.json. When fired=True
-  the rule is also appended to the validated-rules library for future runs.
+- record_iteration(...) — persist this attempt to metrics.csv and experiment.json. MUST be called
+  after EVERY trigger_attacker + check_alert_fired pair, regardless of whether fired is True or
+  False. Skipping a call when fired=False is a data-loss bug. When fired=True the rule is also
+  appended to the validated-rules library.
 
 Skills available (browse <skills_system> and load with get_skill_instructions when relevant):
 - Workflow: validated-rules-library (READ FIRST), snort-rule-generation, rule-validation-workflow,

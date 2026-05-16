@@ -26,6 +26,7 @@ def test_recorder_writes_experiment_json_and_metrics_csv(tmp_path):
     assert experiment["executions"] == [
         {
             "iteration": 1,
+            "rule_version": "base_1",
             "execution_type": "base",
             "attacker": {
                 "attack_id": "mqtt-bruteforce",
@@ -46,11 +47,10 @@ def test_recorder_writes_experiment_json_and_metrics_csv(tmp_path):
 
     assert rows == [
         {
-            "iteration": "1",
+            "rule_version": "base_1",
             "execution_type": "base",
             "attack_id": "mqtt-bruteforce",
             "arguments": '["10.0.0.5","1883"]',
-            "container_exit_code": "",
             "fired": "false",
             "evasion_rationale": "Baseline attack should match the generated rule",
             "rule": "",

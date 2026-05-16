@@ -70,11 +70,14 @@ def make_record_iteration(
             "recorded".
         """
         execution_type = "base" if context.variant_label == "base" else "variant"
+        rule_version = f"{context.variant_label}_{iteration}"
         logger.debug(
-            "Skill record_iteration called experiment_id=%s iteration=%s execution_type=%s",
+            "Skill record_iteration called experiment_id=%s iteration=%s execution_type=%s rule_version=%s fired=%s",
             context.experiment_id,
             iteration,
             execution_type,
+            rule_version,
+            fired,
         )
         recorder.record_execution(
             experiment_id=context.experiment_id,
@@ -87,6 +90,7 @@ def make_record_iteration(
             rule=rule,
             container_exit_code=container_exit_code,
             container_stderr=container_stderr,
+            rule_version=rule_version,
         )
         context.last_fired = fired
         context.last_attack_id = attack_id

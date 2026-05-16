@@ -37,14 +37,14 @@ $LogDir = if ([string]::IsNullOrEmpty($env:LOG_DIR)) { Join-Path $ProjectDir "ou
 $DefaultAttacks = @(
     "xrce-dds-udp-dos",
     "xrce-dds-entity-flood",
-    "xrce-dds-fragment-abuse"
-    # "xrce-dds-malformed-inject",
-    # "xrce-dds-session-hijack",
-    # "xrce-dds-time-desync",
-    # "mqtt-bruteforce",
-    # "mqtt-lwt-abuse",
-    # "mqtt-publisher-flood",
-    # "mqtt-qos-amplification"
+    "xrce-dds-fragment-abuse",
+    "xrce-dds-malformed-inject",
+    "xrce-dds-session-hijack",
+    "xrce-dds-time-desync",
+    "mqtt-bruteforce",
+    "mqtt-lwt-abuse",
+    "mqtt-publisher-flood",
+    "mqtt-qos-amplification"
 )
 
 $AttacksList = @()

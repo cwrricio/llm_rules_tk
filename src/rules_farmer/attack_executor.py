@@ -65,6 +65,12 @@ class AttackExecutor:
         stderr_fetch = self.ssh_client.run_command(f"cat {shlex.quote(remote_stderr_path)}")
         container_stderr = stderr_fetch.stdout.strip() if stderr_fetch.exit_code == 0 else ""
 
+        if container_exit_code == 124:
+            logger.warning(
+                "Container timeout attack_id=%s timeout_seconds=%s",
+                attack_id,
+                self._CONTAINER_TIMEOUT_SECONDS,
+            )
         logger.info(
             "Container status attack_id=%s container_exit_code=%s stderr_lines=%s",
             attack_id,
@@ -135,6 +141,8 @@ class AttackExecutor:
             )
         return result.stdout.strip()
 
+    _CONTAINER_TIMEOUT_SECONDS = 60
+
     def _build_remote_command(
         self,
         attack: DiscoveredAttack,
@@ -160,6 +168,7 @@ class AttackExecutor:
         )
         run_dir = shlex.quote(remote_run_dir)
         container = shlex.quote(container_name)
+        timeout = self._CONTAINER_TIMEOUT_SECONDS
         return "\n".join(
             [
                 "set -u",
@@ -170,7 +179,15 @@ class AttackExecutor:
                 f"{docker_run} >/dev/null",
                 "EXIT_CODE=1",
                 "set +e",
-                f"EXIT_CODE=$(docker wait {container})",
+                f"CONTAINER_EXIT=$(timeout {timeout} docker wait {container})",
+                "WAIT_STATUS=$?",
+                "if [ $WAIT_STATUS -eq 124 ]; then",
+                f"  echo 'Container exceeded {timeout}s timeout, stopping' >&2",
+                f"  docker stop {container} >/dev/null 2>&1 || true",
+                "  EXIT_CODE=124",
+                "else",
+                "  EXIT_CODE=${CONTAINER_EXIT:-1}",
+                "fi",
                 "set -e",
                 f'docker logs {container} > "$STDOUT_PATH" 2> "$STDERR_PATH" || true',
                 f"docker rm {container} >/dev/null 2>&1 || true",
