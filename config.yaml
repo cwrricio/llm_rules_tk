@@ -31,9 +31,23 @@ attack_plan_validation:
   max_retries: 5
 
 experiment_defaults:
+  # max_iterations: tentativas internas do LLM para gerar uma regra que detecte o ataque em um único
+  # ciclo (base ou pós-evasão). Esgotou sem detectar => o ciclo registra fired=false.
   max_iterations: 10
+  # variant_count: quantas variações do ataque devem ser tentadas após o base. O loop externo roda
+  # 1 base + variant_count variações. Quando a regra atual está detectando, cada iteração apenas
+  # varia o ataque sob a MESMA regra (sem novo SID). Quando uma variante escapa, a próxima
+  # iteração obriga o LLM a gerar regra nova.
   variant_count: 49
   continue_on_failure: true
+  # convergence_threshold: contador de fireds consecutivos para encerrar com status="converged".
+  # Regra:
+  #   - inicia em 0 no base (o base NUNCA incrementa, mesmo com fired=True)
+  #   - cada variante com fired=True       => contador += 1
+  #   - cada variante com fired=False      => contador = 0
+  #   - contador >= convergence_threshold  => encerra com status="converged"
+  # Como uma variante que falha também zera active_rule (forçando o LLM a gerar regra nova na
+  # próxima), o contador efetivamente mede TRUEs consecutivos sob a MESMA regra ativa.
   convergence_threshold: 20
 
 testbed:

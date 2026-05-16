@@ -174,11 +174,6 @@ def _create_agno_model(cfg: AgentModelConfig):
         from agno.models.deepseek import DeepSeek
 
         return DeepSeek(id=cfg.model, temperature=cfg.temperature, max_tokens=cfg.max_tokens)
-    
-    if provider == "gemini":
-        from agno.models.google import Gemini
-
-        return Gemini(id=cfg.model, temperature=cfg.temperature)
     raise ValueError(
         f"Unsupported llm provider: {cfg.provider!r}. Expected anthropic / openai / groq / deepseek."
     )

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
 
 from agno.agent import Agent
@@ -14,7 +13,7 @@ from rules_farmer.experiment_recorder import ExperimentRecorder
 from rules_farmer.ids_monitor import IDSMonitor
 from rules_farmer.ids_rule_injector import IDSRuleInjector
 from rules_farmer.ids_rule_validator import SnortRuleValidator
-from rules_farmer.schemas import IterationResult
+from rules_farmer.schemas import AttackerRequest, IterationResult, VariantResult
 from rules_farmer.sid_manager import SIDManager
 from rules_farmer.tools import (
     RunContext,
@@ -115,6 +114,10 @@ class RulesAgent:
         validated_rules_store: ValidatedRulesStore,
     ):
         self._context = RunContext()
+        self._attacker_agent = attacker_agent
+        self._monitor = monitor
+        self._recorder = recorder
+        self._validated_rules_store = validated_rules_store
         self._agent = Agent(
             model=model,
             description=RULES_AGENT_DESCRIPTION,
@@ -151,7 +154,6 @@ class RulesAgent:
         self._context.variant_label = variant_label
         self._context.fixed_destination_ip = fixed_destination_ip
         self._context.fixed_destination_port = fixed_destination_port
-        self._context.last_fired = None
 
         request_variant = variant_label != "base"
         previous_attacks_for_attacker = [
@@ -196,36 +198,11 @@ class RulesAgent:
         )
         response = self._agent.run(prompt)
         result = response.content
-        if isinstance(result, str):
-            logger.warning(
-                "RulesAgent response.content is str - Gemini structured output failed, "
-                "falling back to record_iteration snapshot variant_label=%s",
-                variant_label,
+        if not isinstance(result, IterationResult):
+            raise RuntimeError(
+                "RulesAgent did not return a structured IterationResult "
+                f"(got {type(result).__name__}). Snippet: {str(result)[:300]!r}"
             )
-            if self._context.last_fired is None:
-                try:
-                    err = json.loads(result).get("error", {})
-                    if err.get("code") or err.get("status"):
-                        raise RuntimeError(
-                            f"Gemini API error {err.get('code', '?')} "
-                            f"{err.get('status', '')}: {err.get('message', '?')}"
-                        )
-                except (json.JSONDecodeError, AttributeError):
-                    pass
-                raise RuntimeError(
-                    "RulesAgent returned unstructured text and record_iteration was never called. "
-                    f"Response snippet: {result[:300]!r}"
-                )
-            sid_match = re.search(r"\bsid\s*:\s*(\d+)\b", self._context.last_rule or "")
-            result = IterationResult(
-                fired=self._context.last_fired,
-                final_rule=self._context.last_rule,
-                final_sid=int(sid_match.group(1)) if sid_match else None,
-                attack_id=self._context.last_attack_id,
-                arguments=list(self._context.last_arguments),
-                evasion_rationale=self._context.last_evasion_rationale,
-            )
-        result: IterationResult
         logger.info(
             "RulesAgent run_iteration finished variant_label=%s fired=%s rules_attempted=%s final_sid=%s",
             variant_label,
@@ -249,3 +226,108 @@ class RulesAgent:
                 result.diagnosis,
             )
         return result
+
+    def run_variant_attack(
+        self,
+        intent: str,
+        variant_label: str,
+        active_sid: int,
+        active_rule: str,
+        previous_attacks: list[dict],
+        experiment_id: str,
+        fixed_destination_ip: str | None = None,
+        fixed_destination_port: int | None = None,
+    ) -> IterationResult:
+        """Variant cycle where the rule is already deployed and fired.
+
+        Skips LLM rule generation entirely — varies the attack and checks whether the
+        existing rule still detects it. Only called when the previous iteration fired.
+        """
+        self._context.experiment_id = experiment_id
+        self._context.variant_label = variant_label
+        self._context.fixed_destination_ip = fixed_destination_ip
+        self._context.fixed_destination_port = fixed_destination_port
+
+        log_stage("AGORA ESTA VARIANDO O ATAQUE (REGRA JA DEPLOYADA)")
+        logger.info(
+            "RulesAgent run_variant_attack starting variant_label=%s experiment_id=%s active_sid=%s",
+            variant_label,
+            experiment_id,
+            active_sid,
+        )
+
+        history = [
+            VariantResult(
+                attack_id=item["attack_id"],
+                arguments=item.get("arguments", []),
+                fired=item.get("fired", False),
+            )
+            for item in previous_attacks
+        ]
+        request = AttackerRequest(
+            intent=intent,
+            rule=active_rule,
+            sid=active_sid,
+            request_variant=True,
+            variant_history=history,
+            fixed_destination_ip=fixed_destination_ip,
+            fixed_destination_port=fixed_destination_port,
+        )
+
+        log_stage("AGORA ESTA PLANEJANDO O ATAQUE")
+        attacker_result = self._attacker_agent.run(request)
+        logger.info(
+            "run_variant_attack attacker finished attack_id=%s arguments=%s",
+            attacker_result.attack_id,
+            attacker_result.arguments,
+        )
+
+        log_stage("AGORA ESTA VERIFICANDO ALERTAS DO IDS")
+        fired = self._monitor.check_fired(active_sid)
+        logger.info("run_variant_attack check_fired sid=%s fired=%s", active_sid, fired)
+
+        rule_version = f"{variant_label}_1"
+        self._recorder.record_execution(
+            experiment_id=experiment_id,
+            iteration=1,
+            execution_type="variant",
+            attack_id=attacker_result.attack_id,
+            arguments=attacker_result.arguments,
+            fired=fired,
+            evasion_rationale=attacker_result.evasion_rationale,
+            rule=active_rule,
+            container_exit_code=attacker_result.container_exit_code,
+            container_stderr=attacker_result.container_stderr,
+            rule_version=rule_version,
+        )
+
+        if fired and self._validated_rules_store is not None:
+            try:
+                added = self._validated_rules_store.save(
+                    attack_id=attacker_result.attack_id, rule=active_rule
+                )
+                if added:
+                    logger.info(
+                        "Validated rule saved to library attack_id=%s experiment_id=%s",
+                        attacker_result.attack_id,
+                        experiment_id,
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to persist validated rule attack_id=%s", attacker_result.attack_id
+                )
+
+        logger.info(
+            "RulesAgent run_variant_attack finished variant_label=%s fired=%s",
+            variant_label,
+            fired,
+        )
+        return IterationResult(
+            fired=fired,
+            final_rule=active_rule,
+            final_sid=active_sid,
+            rules_attempted=[active_rule],
+            attack_id=attacker_result.attack_id,
+            arguments=attacker_result.arguments,
+            evasion_rationale=attacker_result.evasion_rationale,
+        )

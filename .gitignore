@@ -7,3 +7,4 @@ __pycache__/
 data/sid_counter.json
 results/
 .claude
+.kilo

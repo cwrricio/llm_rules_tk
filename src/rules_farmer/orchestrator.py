@@ -66,6 +66,8 @@ class Orchestrator:
         previous_iterations: list[IterationResult] = []
         any_failed = False
         consecutive_detections = 0
+        active_rule: str | None = None
+        active_sid: int | None = None
         try:
             for variant_index in range(variant_count + 1):
                 label = "base" if variant_index == 0 else f"variant_{variant_index}"
@@ -76,17 +78,43 @@ class Orchestrator:
                     variant_index,
                     label,
                 )
-                result = self.rules_agent.run_iteration(
-                    intent=intent,
-                    variant_label=label,
-                    previous_iterations=previous_iterations,
-                    max_internal_attempts=max_iterations,
-                    experiment_id=experiment_id,
-                    fixed_destination_ip=fixed.ip if fixed else None,
-                    fixed_destination_port=fixed.port if fixed else None,
-                )
+
+                previous_attacks = [
+                    {"attack_id": p.attack_id, "arguments": p.arguments, "fired": p.fired}
+                    for p in previous_iterations
+                    if p.attack_id
+                ]
+
+                if variant_index > 0 and active_rule is not None and active_sid is not None:
+                    # Rule already deployed and fired — vary the attack without LLM rule generation.
+                    # This is what variant_count controls: how many times the attack varies
+                    # when the rule detects it.
+                    result = self.rules_agent.run_variant_attack(
+                        intent=intent,
+                        variant_label=label,
+                        active_sid=active_sid,
+                        active_rule=active_rule,
+                        previous_attacks=previous_attacks,
+                        experiment_id=experiment_id,
+                        fixed_destination_ip=fixed.ip if fixed else None,
+                        fixed_destination_port=fixed.port if fixed else None,
+                    )
+                else:
+                    result = self.rules_agent.run_iteration(
+                        intent=intent,
+                        variant_label=label,
+                        previous_iterations=previous_iterations,
+                        max_internal_attempts=max_iterations,
+                        experiment_id=experiment_id,
+                        fixed_destination_ip=fixed.ip if fixed else None,
+                        fixed_destination_port=fixed.port if fixed else None,
+                    )
+
                 previous_iterations.append(result)
                 if result.fired:
+                    if result.final_rule and result.final_sid is not None:
+                        active_rule = result.final_rule
+                        active_sid = result.final_sid
                     if variant_index > 0:
                         consecutive_detections += 1
                         logger.info(
@@ -109,8 +137,16 @@ class Orchestrator:
                             return self._finalize(experiment_id, converged=True, status="converged")
                 else:
                     consecutive_detections = 0
+                    active_rule = None
+                    active_sid = None
                     any_failed = True
                     log_stage(f"VARIANTE {label.upper()} NAO DETECTADA")
+                    logger.info(
+                        "Rule evaded — resetting consecutive_detections and forcing rule regeneration "
+                        "on next cycle experiment_id=%s label=%s",
+                        experiment_id,
+                        label,
+                    )
                     if not self.continue_on_failure:
                         log_stage("EXPERIMENTO FALHOU - PARANDO")
                         return self._finalize(experiment_id, converged=False, status="failed")

@@ -100,7 +100,12 @@ class AttackerAgent:
             len(request.variant_history),
         )
         response = self._agent.run(request.model_dump_json())
-        result: AttackerResult = response.content
+        result = response.content
+        if not isinstance(result, AttackerResult):
+            raise RuntimeError(
+                "AttackerAgent did not return a structured AttackerResult "
+                f"(got {type(result).__name__}). Snippet: {str(result)[:300]!r}"
+            )
         if result.attack_id not in self._attacks_by_id:
             logger.error("AttackerAgent produced unknown attack_id=%s", result.attack_id)
             raise UnmappedIntentError(

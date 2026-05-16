@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from agno.tools import tool
 
@@ -26,14 +26,6 @@ class RunContext:
     variant_label: str = "base"
     fixed_destination_ip: str | None = None
     fixed_destination_port: int | None = None
-
-    # Fallback snapshot populated by record_iteration; used when Gemini returns plain text
-    # instead of structured JSON (tools + output_schema conflict in the Gemini API).
-    last_fired: bool | None = None
-    last_attack_id: str = ""
-    last_arguments: list[str] = field(default_factory=list)
-    last_evasion_rationale: str = ""
-    last_rule: str | None = None
 
 
 def make_record_iteration(
@@ -92,11 +84,6 @@ def make_record_iteration(
             container_stderr=container_stderr,
             rule_version=rule_version,
         )
-        context.last_fired = fired
-        context.last_attack_id = attack_id
-        context.last_arguments = list(arguments)
-        context.last_evasion_rationale = evasion_rationale
-        context.last_rule = rule
         if fired and validated_rules_store is not None and rule:
             try:
                 added = validated_rules_store.save(attack_id=attack_id, rule=rule)
