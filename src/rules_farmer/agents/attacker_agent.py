@@ -99,12 +99,26 @@ class AttackerAgent:
             request.request_variant,
             len(request.variant_history),
         )
-        response = self._agent.run(request.model_dump_json())
-        result = response.content
+        prompt = request.model_dump_json()
+        max_attempts = 3
+        result = None
+        for attempt in range(1, max_attempts + 1):
+            response = self._agent.run(prompt)
+            result = response.content
+            if isinstance(result, AttackerResult):
+                break
+            logger.warning(
+                "AttackerAgent attempt %s/%s returned %s instead of AttackerResult. Snippet: %r",
+                attempt,
+                max_attempts,
+                type(result).__name__,
+                str(result)[:300],
+            )
         if not isinstance(result, AttackerResult):
             raise RuntimeError(
-                "AttackerAgent did not return a structured AttackerResult "
-                f"(got {type(result).__name__}). Snippet: {str(result)[:300]!r}"
+                f"AttackerAgent did not return a structured AttackerResult after "
+                f"{max_attempts} attempts (got {type(result).__name__}). "
+                f"Snippet: {str(result)[:300]!r}"
             )
         if result.attack_id not in self._attacks_by_id:
             logger.error("AttackerAgent produced unknown attack_id=%s", result.attack_id)
