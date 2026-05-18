@@ -12,12 +12,17 @@ from rules_farmer.tools.persistence_tools import RunContext
 
 if TYPE_CHECKING:
     from rules_farmer.agents.attacker_agent import AttackerAgent
+    from rules_farmer.mutation_recorder import MutationContext
 
 
 logger = logging.getLogger(__name__)
 
 
-def make_trigger_attacker(attacker_agent: "AttackerAgent", context: RunContext):
+def make_trigger_attacker(
+    attacker_agent: "AttackerAgent",
+    context: RunContext,
+    mutation_context: "MutationContext | None" = None,
+):
     @tool
     def trigger_attacker(
         intent: str,
@@ -72,6 +77,9 @@ def make_trigger_attacker(attacker_agent: "AttackerAgent", context: RunContext):
             context.fixed_destination_ip,
             context.fixed_destination_port,
         )
+        if mutation_context is not None:
+            mutation_context.experiment_id = context.experiment_id
+            mutation_context.variant_label = context.variant_label
         result = attacker_agent.run(request)
         logger.info(
             "Tool trigger_attacker finished attack_id=%s arguments=%s",

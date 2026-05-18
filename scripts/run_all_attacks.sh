@@ -21,6 +21,24 @@
 
 set -uo pipefail
 
+# Resolve the uv binary. When this script runs under sudo, PATH is stripped and
+# uv (typically in ~/.local/bin) becomes invisible. SUDO_USER still points to
+# the invoking user, so we can find their installation.
+UV="$(command -v uv 2>/dev/null)"
+if [[ -z "${UV}" && -n "${SUDO_USER:-}" ]]; then
+  _sudo_home="$(getent passwd "${SUDO_USER}" | cut -d: -f6)"
+  for _candidate in \
+      "${_sudo_home}/.local/bin/uv" \
+      "${_sudo_home}/.cargo/bin/uv" \
+      /usr/local/bin/uv; do
+    if [[ -x "${_candidate}" ]]; then
+      UV="${_candidate}"
+      break
+    fi
+  done
+fi
+: "${UV:?uv not found — install uv or add it to PATH}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 LOG_DIR="${LOG_DIR:-${PROJECT_DIR}/output_batch}"
@@ -71,7 +89,7 @@ for attack_id in "${ATTACK_LIST[@]}"; do
 
   # rules-farmer reads the intent from stdin (input() in cli.main).
   if printf '%s\n' "${intent}" \
-      | uv run --python 3.12 rules-farmer 2>&1 \
+      | "${UV}" run --python 3.12 rules-farmer 2>&1 \
       | tee "${log_file}"; then
     status="ok"
   else

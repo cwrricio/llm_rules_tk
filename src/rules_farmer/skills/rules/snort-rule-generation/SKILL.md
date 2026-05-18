@@ -60,6 +60,41 @@ If yes, the rule is too generic. Add specificity through:
 - **Behavioral signature** (combination of message type, size range, and rate that is only plausible during the attack)
 - **Rate by source** (`detection_filter:track by_src`) — a single client sending 500,000 packets is the attack, not the service receiving them
 
+### Critical false-positive traps to AVOID
+
+1. **Bidirectional rules** (`<>` direction): the rule `alert udp any any <> any any` catches BOTH outgoing attack packets AND incoming server responses. A server responding to 500,000 pings will also generate 500,000 response packets — the rule fires on both sides. **Always use `->` (unidirectional).**
+
+2. **Overly broad dsize ranges**: `dsize:100<>400` matches ALL UDP packets between 100 and 400 bytes. Normal protocol handshakes, keepalives, and acknowledgments often fall in this range. Use dsize as a SECONDARY filter combined with a content/pcre anchor, never alone.
+
+3. **Generic content matches**: `content:"xml"` fires on every XRCE-DDS packet that uses XML-mode encoding (normal operation). `content:"create"` fires on any DDS CREATE operation. Use binary submessage type bytes or protocol-specific multi-byte sequences instead.
+
+4. **Low detection_filter thresholds**: `detection_filter:track by_src, count 1, seconds 10` fires on any single matching packet from a host. A legitimate client can easily send one packet per 10 seconds. Use counts that are genuinely anomalous (e.g., 50+ per second for DoS, 5+ entity creations in 30 seconds for flood attacks).
+
+5. **Missing payload anchor**: A rule with only `detection_filter` and no content/dsize/pcre fires on literally any traffic of that protocol type. This is ALWAYS wrong.
+
+## MANDATORY VALIDATION FLOW
+
+After writing a rule, follow this exact sequence — no steps may be skipped:
+
+```
+1. validate_rule_syntax(rule)
+2. assign_sid(intent, rule)           → get SID
+3. deploy_rule(rule_with_sid)         → push to IDS
+4. run_benign_traffic(protocol, sid)  → FALSE POSITIVE CHECK
+   ├─ false_positive=True  → DISCARD rule. Generate a more specific rule. Go back to step 1.
+   └─ false_positive=False → rule passed benign check. Proceed.
+5. trigger_attacker(intent, rule, sid, ...)
+6. check_alert_fired(sid)
+7. record_iteration(...)
+```
+
+**Step 4 is NOT optional.** A rule that fires on legitimate traffic is scientifically invalid and must be discarded before being tested against an attack. The `run_benign_traffic` tool also clears the alert log automatically, so the subsequent `check_alert_fired` call will reflect only the real attack.
+
+Protocol mapping for `run_benign_traffic`:
+- XRCE-DDS attacks → `protocol="xrce"`
+- MQTT attacks → `protocol="mqtt"`
+- HTTP attacks → `protocol="http"`
+
 ## Mandatory Behavior
 
 - The rule header MUST be `<action> <proto> any any -> any any` (see HARD CONSTRAINT above).
@@ -78,7 +113,8 @@ If yes, the rule is too generic. Add specificity through:
    b. A **rate or behavioral filter** (`detection_filter:track by_src`) calibrated so legitimate single clients do not trigger it.
 4. Format it according to the Snort 3.9.7.0 grammar in `references/snort3-syntax-cheatsheet.md`.
 5. If you have prior feedback (container_stderr, ids_logs, validation_error), incorporate it into your revision.
-6. Return one or more candidate rules.
+6. Follow the MANDATORY VALIDATION FLOW above before calling trigger_attacker.
+7. Return one or more candidate rules.
 
 ## Output Format
 

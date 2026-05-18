@@ -16,3 +16,7 @@ alert udp any any -> any any (msg:"quero gerar regras xrce-dds-entity-flood"; pc
 alert udp any any -> any any (msg:"quero gerar regras xrce-dds-entity-flood"; pcre:"/\x01.{10}[\x01-\x08]/s"; dsize:<200; detection_filter:track by_src, count 10, seconds 10; sid:0; rev:1;)
 # attack_id=xrce-dds-udp-dos fired_at=2026-05-15T19:23:05Z
 alert udp any any -> any any (msg:"detect xrce-dds uddp"; dsize:100<>400; detection_filter:track by_src, count 1, seconds 10; sid:0; rev:1;)
+# attack_id=xrce-dds-fragment-abuse fired_at=2026-05-18T19:23:39Z
+alert udp any any -> any any (msg:"quero gerar regras xrce-dds-fragment-abuse"; content:"|52 54 50 53|"; content:"|16|"; detection_filter:track by_src, count 50, seconds 5; sid:0; rev:1;)
+# attack_id=xrce-dds-fragment-abuse fired_at=2026-05-18T19:54:29Z
+alert udp any any -> any any (msg:"quero gerar regras xrce-dds-fragment-abuse"; dsize:15<>55; detection_filter:track by_src, count 2, seconds 60; sid:0; rev:1;)

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from fastapi import FastAPI
 
+from pathlib import Path
+
 from rules_farmer.agents import AttackerAgent, RulesAgent
 from rules_farmer.api import create_app
 from rules_farmer.attack_discovery import RemoteAttackDiscovery
@@ -15,6 +17,8 @@ from rules_farmer.experiment_recorder import ExperimentIDFactory, ExperimentReco
 from rules_farmer.ids_monitor import IDSMonitor
 from rules_farmer.ids_rule_injector import IDSRuleInjector
 from rules_farmer.ids_rule_validator import SnortRuleValidator
+from rules_farmer.benign_traffic import BenignTrafficRunner
+from rules_farmer.mutation_recorder import MutationContext
 from rules_farmer.orchestrator import Orchestrator
 from rules_farmer.sid_manager import SIDManager
 from rules_farmer.ssh import SSHClient
@@ -89,6 +93,7 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
     validated_rules_store = ValidatedRulesStore(
         root=config.testbed.validated_rules_dir
     )
+    mutation_context = MutationContext(output_dir=Path(config.testbed.results_output_dir))
 
     injector.ensure_rules_file()
 
@@ -108,11 +113,13 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         ssh_client=attacker_ssh,
         attacks={attack.attack_id: attack for attack in discovered_attacks},
     )
+    benign_runner = BenignTrafficRunner(ssh_client=attacker_ssh)
 
     attacker_agent = AttackerAgent(
         model=_create_agno_model(config.llm.attacker_agent),
         attacks=discovered_attacks,
         executor=attack_executor,
+        mutation_context=mutation_context,
     )
     rules_agent = RulesAgent(
         model=_create_agno_model(config.llm.rule_agent),
@@ -123,6 +130,8 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         attacker_agent=attacker_agent,
         recorder=recorder,
         validated_rules_store=validated_rules_store,
+        mutation_context=mutation_context,
+        benign_runner=benign_runner,
     )
 
     experiment_id_factory = ExperimentIDFactory(config.testbed.experiment_counter_file_path)
@@ -133,6 +142,7 @@ def build_runtime(config_path: str = "config.yaml") -> RuntimeStack:
         attack_destinations=config.attack_destinations,
         experiment_id_factory=experiment_id_factory,
         continue_on_failure=config.experiment_defaults.continue_on_failure,
+        validated_rules_store=validated_rules_store,
     )
 
     logger.debug(

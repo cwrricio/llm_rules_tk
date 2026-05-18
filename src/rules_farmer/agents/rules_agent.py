@@ -13,6 +13,8 @@ from rules_farmer.experiment_recorder import ExperimentRecorder
 from rules_farmer.ids_monitor import IDSMonitor
 from rules_farmer.ids_rule_injector import IDSRuleInjector
 from rules_farmer.ids_rule_validator import SnortRuleValidator
+from rules_farmer.benign_traffic import BenignTrafficRunner
+from rules_farmer.mutation_recorder import MutationContext
 from rules_farmer.schemas import AttackerRequest, IterationResult, VariantResult
 from rules_farmer.sid_manager import SIDManager
 from rules_farmer.tools import (
@@ -22,6 +24,7 @@ from rules_farmer.tools import (
     make_deploy_rule,
     make_get_validated_rules,
     make_record_iteration,
+    make_run_benign_traffic,
     make_trigger_attacker,
     make_validate_rule_syntax,
 )
@@ -65,6 +68,21 @@ HARD CONSTRAINT — RULE SPECIFICITY (NO FALSE POSITIVES):
 - ALWAYS use `detection_filter:track by_src` (per source), never `track by_dst` (which aggregates
   all clients together and fires on normal load).
 
+MANDATORY VALIDATION FLOW — follow this exact sequence for EVERY rule you deploy:
+
+  1. validate_rule_syntax(rule)        — syntax check; fix any errors before proceeding
+  2. assign_sid(intent, rule)          — get a unique SID
+  3. deploy_rule(rule_with_sid)        — push to IDS and restart Snort
+  4. run_benign_traffic(protocol, sid) — FALSE POSITIVE CHECK (MANDATORY):
+       * protocol must match the attack family: "xrce", "mqtt", or "http"
+       * If false_positive=True  → DISCARD rule immediately. Generate a more specific rule
+         (narrower content match, binary fingerprint, tighter dsize, higher detection_filter count).
+         Go back to step 1. Do NOT call trigger_attacker with a rule that fires on benign traffic.
+       * If false_positive=False → rule passed. Proceed to step 5.
+  5. trigger_attacker(intent, rule, sid, request_variant, previous_attacks)
+  6. check_alert_fired(sid)
+  7. record_iteration(...)             — MUST be called after every trigger+check pair.
+
 Tools available (live operations):
 - get_validated_rules(attack_id) — list of rules that already fired in past experiments for this
   attack family. ALWAYS call this BEFORE generating a new rule. If non-empty, try the most recent
@@ -72,6 +90,10 @@ Tools available (live operations):
 - validate_rule_syntax(rule) — check syntax against the IDS host
 - assign_sid(intent, rule) — replace sid:0; with a unique SID; returns {"sid", "rule"}
 - deploy_rule(rule_with_sid) — push to IDS and restart Snort
+- run_benign_traffic(protocol, sid, duration_seconds=20) — run legitimate protocol traffic and
+  check whether the deployed rule fires on it. Returns {"false_positive": bool, ...}.
+  Clears the alert log automatically so the subsequent attack test starts clean.
+  Call AFTER deploy_rule and BEFORE trigger_attacker. Skipping this step is FORBIDDEN.
 - trigger_attacker(intent, rule, sid, request_variant, previous_attacks) — invoke the Attack Agent
 - check_alert_fired(sid) — read the IDS alert log for this SID
 - record_iteration(...) — persist this attempt to metrics.csv and experiment.json. MUST be called
@@ -112,8 +134,11 @@ class RulesAgent:
         attacker_agent: AttackerAgent,
         recorder: ExperimentRecorder,
         validated_rules_store: ValidatedRulesStore,
+        mutation_context: MutationContext | None = None,
+        benign_runner: BenignTrafficRunner | None = None,
     ):
         self._context = RunContext()
+        self._mutation_context = mutation_context
         self._attacker_agent = attacker_agent
         self._injector = injector
         self._monitor = monitor
@@ -133,7 +158,12 @@ class RulesAgent:
                 make_validate_rule_syntax(validator),
                 make_assign_sid(sid_manager),
                 make_deploy_rule(injector, monitor),
-                make_trigger_attacker(attacker_agent, self._context),
+                *(
+                    [make_run_benign_traffic(benign_runner, monitor, self._context)]
+                    if benign_runner is not None
+                    else []
+                ),
+                make_trigger_attacker(attacker_agent, self._context, mutation_context),
                 make_check_alert_fired(monitor),
                 make_record_iteration(recorder, self._context, validated_rules_store),
                 make_get_validated_rules(validated_rules_store),
@@ -263,6 +293,9 @@ class RulesAgent:
         self._context.variant_label = variant_label
         self._context.fixed_destination_ip = fixed_destination_ip
         self._context.fixed_destination_port = fixed_destination_port
+        if self._mutation_context is not None:
+            self._mutation_context.experiment_id = experiment_id
+            self._mutation_context.variant_label = variant_label
 
         log_stage("AGORA ESTA VARIANDO O ATAQUE (REGRA JA DEPLOYADA)")
         logger.info(

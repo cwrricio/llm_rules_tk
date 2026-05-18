@@ -7,6 +7,7 @@ from rules_farmer.tools.attack_tools import (
     make_read_attack_source_file,
     make_rebuild_attack_image,
 )
+from rules_farmer.tools.benign_tools import make_run_benign_traffic
 from rules_farmer.tools.inter_agent_tools import make_trigger_attacker
 from rules_farmer.tools.monitor_tools import make_check_alert_fired
 from rules_farmer.tools.persistence_tools import (
@@ -34,6 +35,7 @@ __all__ = [
     "make_read_attack_source_file",
     "make_rebuild_attack_image",
     "make_record_iteration",
+    "make_run_benign_traffic",
     "make_trigger_attacker",
     "make_validate_rule_syntax",
 ]

@@ -88,6 +88,49 @@ class ValidatedRulesStore:
         """Return the canonical validated rules for the given attack_id (most recent last)."""
         return list(self._load_canonical_for(_slugify(attack_id)))
 
+    def known_attack_ids(self) -> list[str]:
+        """Return all attack_ids that have at least one validated rule in the library."""
+        path = self._combined_path
+        if not path.exists():
+            return []
+        seen: list[str] = []
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            meta = _META_PATTERN.match(raw.strip())
+            if meta:
+                slug = meta.group(1)
+                if slug not in seen:
+                    seen.append(slug)
+        return seen
+
+    def export_per_attack(self, output_dir: "str | Path") -> dict[str, "Path"]:
+        """Write one .rules file per attack family under output_dir.
+
+        Each file is named <attack_id>.rules and contains only the rules for that
+        attack family, one rule per line, without metadata comments.  This produces
+        clean, deployable Snort rule sets for each attack class.
+
+        Returns a mapping {attack_id: path} for every file written.
+        """
+        from pathlib import Path  # local import to avoid top-level circular risk
+
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        written: dict[str, Path] = {}
+        for slug in self.known_attack_ids():
+            rules = self._load_canonical_for(slug)
+            if not rules:
+                continue
+            dest = out / f"{slug}.rules"
+            dest.write_text("\n".join(rules) + "\n", encoding="utf-8")
+            logger.info(
+                "Per-attack rules exported attack_id=%s count=%s path=%s",
+                slug,
+                len(rules),
+                dest,
+            )
+            written[slug] = dest
+        return written
+
     def _load_canonical_for(self, slug: str) -> list[str]:
         path = self._combined_path
         if not path.exists():

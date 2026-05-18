@@ -12,6 +12,7 @@ from rules_farmer.attack_discovery import DiscoveredAttack
 from rules_farmer.attack_executor import AttackExecutor
 from rules_farmer.errors import UnmappedIntentError
 from rules_farmer.execution_logging import log_stage
+from rules_farmer.mutation_recorder import MutationContext
 from rules_farmer.schemas import AttackerRequest, AttackerResult
 from rules_farmer.tools import (
     make_execute_attack,
@@ -110,6 +111,7 @@ class AttackerAgent:
         model,
         attacks: list[DiscoveredAttack],
         executor: AttackExecutor,
+        mutation_context: MutationContext | None = None,
     ):
         self._attacks_by_id = {attack.attack_id: attack for attack in attacks}
         self._agent = Agent(
@@ -128,7 +130,7 @@ class AttackerAgent:
                 make_execute_attack(executor, self._attacks_by_id),
                 make_list_attack_files(executor, self._attacks_by_id),
                 make_read_attack_source_file(executor, self._attacks_by_id),
-                make_modify_attack_file(executor, self._attacks_by_id),
+                make_modify_attack_file(executor, self._attacks_by_id, mutation_context),
                 make_rebuild_attack_image(executor, self._attacks_by_id),
             ],
             output_schema=AttackerResult,

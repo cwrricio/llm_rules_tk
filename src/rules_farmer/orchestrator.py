@@ -12,6 +12,7 @@ from rules_farmer.experiment_recorder import ExperimentRecorder
 from rules_farmer.execution_logging import log_stage
 from rules_farmer.intent_preprocessor import FixedDestination, resolve_fixed_destination
 from rules_farmer.schemas import IterationResult
+from rules_farmer.validated_rules import ValidatedRulesStore
 
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,14 @@ class Orchestrator:
         attack_destinations: AttackDestinationsConfig,
         experiment_id_factory: Callable[[], str] | None = None,
         continue_on_failure: bool = False,
+        validated_rules_store: ValidatedRulesStore | None = None,
     ):
         self.rules_agent = rules_agent
         self.recorder = recorder
         self.attack_destinations = attack_destinations
         self.experiment_id_factory = experiment_id_factory or (lambda: str(uuid.uuid4()))
         self.continue_on_failure = continue_on_failure
+        self.validated_rules_store = validated_rules_store
 
     def run_experiment(
         self,
@@ -174,6 +177,19 @@ class Orchestrator:
             artifacts.json_path,
             artifacts.csv_path,
         )
+        if self.validated_rules_store is not None:
+            try:
+                out_dir = artifacts.json_path.parent / "validated_rules"
+                written = self.validated_rules_store.export_per_attack(out_dir)
+                logger.info(
+                    "Per-attack rules exported experiment_id=%s families=%s",
+                    experiment_id,
+                    list(written),
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to export per-attack validated rules experiment_id=%s", experiment_id
+                )
         return ExperimentRunResult(
             status=status,
             experiment_id=experiment_id,

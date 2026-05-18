@@ -56,8 +56,13 @@ When the attack exposes **only destination-fixed arguments** (target + port) and
 2. Pick the mutation strategy from the playbook loaded in Step 1 (obfuscação / fragmentação-timing / context shifting) that defeats the fired rule's detection mechanism.
 3. Produce the mutated file content implementing that strategy.
 4. Call `modify_attack_file(attack_id, filename, new_content)` to write it to the attacker host.
-5. Call `rebuild_attack_image(attack_id)` to rebuild the Docker image. Verify `exit_code == 0` before proceeding.
+5. Call `rebuild_attack_image(attack_id)` to rebuild the Docker image.
+   **MANDATORY: Check `exit_code == 0` in the response. If `exit_code != 0`, the build FAILED.**
+   When the build fails, the container will silently run the OLD unmodified image — your mutation has no effect.
+   If the build fails: read the `output` field to diagnose the compilation error, fix the source, and rebuild again before executing.
+   Never call `execute_attack` after a failed rebuild.
 6. Call `execute_attack(attack_id, arguments)` as usual — the container now runs the mutated code.
+7. Set `evasion_rationale` to clearly state (a) what mutation was applied, (b) which rule condition it targets, and (c) confirm the rebuild exit_code was 0.
 
 Set `evasion_rationale` to a one-line explanation of the strategy applied and the rule mechanism it targets.
 
@@ -66,5 +71,7 @@ Set `evasion_rationale` to a one-line explanation of the strategy applied and th
 - Switch `attack_id` between variants of the same intent — same intent must use the same attack class.
 - Violate the `required_arguments` schema — mutate VALUES (Level 1) or internal source logic (Level 2), not the argument list shape.
 - Mutate `fixed_destination_ip` or `fixed_destination_port` across variants.
-- Call `execute_attack` without rebuilding first if you modified source files.
+- Call `execute_attack` after a failed rebuild (exit_code != 0) — this silently runs the OLD image.
 - Skip loading `refinamento.md` — without the adaptation algorithm you will repeat defeated strategies.
+- Apply the same mutation strategy twice. If a strategy already appeared in `variant_history` with `fired=True`, the rule STILL detected it — try a different strategy from the adaptation algorithm.
+- Assume your modification was applied without verifying the rebuild succeeded.

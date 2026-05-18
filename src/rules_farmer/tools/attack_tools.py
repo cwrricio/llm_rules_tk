@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from agno.tools import tool
 
@@ -8,6 +9,9 @@ from rules_farmer.attack_discovery import DiscoveredAttack
 from rules_farmer.attack_executor import AttackExecutor
 from rules_farmer.execution_logging import log_stage
 
+
+if TYPE_CHECKING:
+    from rules_farmer.mutation_recorder import MutationContext
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +116,11 @@ def make_read_attack_source_file(executor: AttackExecutor, attacks: dict[str, Di
     return read_attack_source_file
 
 
-def make_modify_attack_file(executor: AttackExecutor, attacks: dict[str, DiscoveredAttack]):
+def make_modify_attack_file(
+    executor: AttackExecutor,
+    attacks: dict[str, DiscoveredAttack],
+    mutation_context: "MutationContext | None" = None,
+):
     @tool
     def modify_attack_file(attack_id: str, filename: str, content: str) -> dict:
         """Write new content to a source file in the attack directory on the attacker host.
@@ -137,6 +145,13 @@ def make_modify_attack_file(executor: AttackExecutor, attacks: dict[str, Discove
         except Exception as exc:
             logger.error("Tool modify_attack_file failed attack_id=%s error=%s", attack_id, exc)
             return {"error": str(exc)}
+        if mutation_context is not None:
+            try:
+                mutation_context.record(attack_id, filename, content)
+            except Exception:
+                logger.exception(
+                    "Failed to persist mutation snapshot attack_id=%s filename=%s", attack_id, filename
+                )
         return {"attack_id": attack_id, "filename": filename, "bytes_written": len(content.encode())}
 
     return modify_attack_file

@@ -6,11 +6,16 @@ Inundação de entidades XRCE-DDS contra o Agent. O atacante estabelece uma sess
 
 ## 2. Hipóteses de Detecção
 
-| ID | Hipótese | Mecanismo de Detecção | Severidade |
-|----|----------|----------------------|------------|
-| H1 | Criação estática sem deleção | Criar N entidades e mantê-las vivas é um padrão de alocação monotônica. O Agent pode implementar quotas por ProxyClient — ao atingir o limite, recusa novas entidades e loga o evento. A progressão linear do número de entidades é anomalia comparada a clientes reais que criam/destroem dinamicamente. | Alta |
-| H2 | XML de configuração repetitivo | Nomes de entidade com padrão previsível (`flood_p_0_0`, `FloodTopic_0_1`) são assinatura de ataque. O parser XML do Agent pode implementar caching de entidades com mesmo nome, reduzindo o impacto. | Média |
-| H3 | Única client_key por thread | Cada thread usa uma única session_key fixa. O Agent rastreia recursos por ProxyClient — se todas as entidades pertencem ao mesmo cliente, o limite de quota bloqueia o ataque. | Alta |
+| ID | Hipótese | Mecanismo de Detecção | Severidade | Fingerprint de Regra |
+|----|----------|----------------------|------------|---------------------|
+| H1 | Criação estática sem deleção | Criar N entidades e mantê-las vivas é padrão de alocação monotônica. Taxa de CREATE_ENTITY superior a qualquer uso legítimo. | Alta | `content:"\|00 01\|",offset 0,depth 2; dsize:>20; detection_filter:track by_src, count 30, seconds 10` (session_id=0x00 + submsg CREATE=0x01) |
+| H2 | XML de configuração presente | O ataque original usa `uxr_buffer_create_*_xml()` — os pacotes contêm XML literal. Clientes legítimos podem usar modo binário (CDR). | Média | `content:"\|3c\|",offset 4,depth 1; detection_filter:track by_src, count 20, seconds 30` (0x3C = '<' de abertura XML) |
+| H3 | Única client_key por thread | Múltiplos CREATE do mesmo IP em alta frequência são anômalos para clientes normais. | Alta | `detection_filter:track by_src, count 50, seconds 30` (sem content isolado — combinar com fingerprint) |
+
+**ATENÇÃO:** A regra `content:"xml"` captura qualquer pacote XRCE-DDS que contenha as letras "xml"
+(como na tag `<xml>` ou string "xml_type"). Isso gera FALSO POSITIVO em operação normal.
+Use um fingerprint mais específico: o byte `0x3C` ('<') em posição APÓS o header XRCE (offset≥4),
+ou os bytes de submensagem CREATE_ENTITY (`0x01`) no campo submsg_id.
 
 ## 3. Catálogo de Evasão
 

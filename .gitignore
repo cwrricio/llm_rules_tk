@@ -9,3 +9,5 @@ results/
 .claude
 .kilo
 escrita-artigo/
+output_batch/
+output.log
