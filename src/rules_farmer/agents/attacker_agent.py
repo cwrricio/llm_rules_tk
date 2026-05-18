@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from pathlib import Path
 
 from agno.agent import Agent
@@ -62,6 +64,46 @@ If the intent does not match any discovered attack, return the closest attack_id
 """
 
 
+_RETRY_JSON_SUFFIX = (
+    "\n\nCRITICAL: Your previous response was not valid JSON. "
+    "Reply with ONLY a JSON object matching the AttackerResult schema — "
+    "no explanatory text, no markdown fences, no reasoning outside the JSON. "
+    "Inside JSON string values, escape backslashes as \\\\, so write \\\\x01 not \\x01."
+)
+
+
+def _fix_hex_escapes(text: str) -> str:
+    """Replace bare \\xNN sequences (invalid JSON) with \\\\xNN (valid JSON)."""
+    return re.sub(r"(?<!\\)\\x([0-9a-fA-F]{2})", lambda m: "\\\\x" + m.group(1), text)
+
+
+def _try_extract_attacker_result(text: str) -> AttackerResult | None:
+    """Try to extract and repair a JSON block from raw LLM text output."""
+    # Find the outermost {...} block
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    end = -1
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end == -1:
+        return None
+    candidate = text[start : end + 1]
+    candidate = _fix_hex_escapes(candidate)
+    try:
+        data = json.loads(candidate)
+        return AttackerResult.model_validate(data)
+    except Exception:
+        return None
+
+
 class AttackerAgent:
     def __init__(
         self,
@@ -99,14 +141,25 @@ class AttackerAgent:
             request.request_variant,
             len(request.variant_history),
         )
-        prompt = request.model_dump_json()
+        base_prompt = request.model_dump_json()
         max_attempts = 3
         result = None
         for attempt in range(1, max_attempts + 1):
+            prompt = base_prompt if attempt == 1 else base_prompt + _RETRY_JSON_SUFFIX
             response = self._agent.run(prompt)
             result = response.content
             if isinstance(result, AttackerResult):
                 break
+            if isinstance(result, str):
+                repaired = _try_extract_attacker_result(result)
+                if repaired is not None:
+                    logger.info(
+                        "AttackerAgent attempt %s/%s: recovered AttackerResult via JSON repair",
+                        attempt,
+                        max_attempts,
+                    )
+                    result = repaired
+                    break
             logger.warning(
                 "AttackerAgent attempt %s/%s returned %s instead of AttackerResult. Snippet: %r",
                 attempt,

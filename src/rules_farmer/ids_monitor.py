@@ -32,3 +32,7 @@ class IDSMonitor:
         )
         logger.info("IDS alert log checked sid=%s fired=%s", sid, fired)
         return fired
+
+    def clear_alert_log(self) -> None:
+        logger.info("Clearing IDS alert log path=%s", self.alert_log_path)
+        self.ssh_client.run_command(f"truncate -s 0 {shlex.quote(self.alert_log_path)}")

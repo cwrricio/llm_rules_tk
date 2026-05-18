@@ -5,6 +5,7 @@ import logging
 from agno.tools import tool
 
 from rules_farmer.execution_logging import log_stage
+from rules_farmer.ids_monitor import IDSMonitor
 from rules_farmer.ids_rule_injector import IDSRuleInjector
 from rules_farmer.ids_rule_validator import SnortRuleValidator
 from rules_farmer.sid_manager import SIDManager
@@ -56,10 +57,10 @@ def make_assign_sid(sid_manager: SIDManager):
     return assign_sid
 
 
-def make_deploy_rule(injector: IDSRuleInjector):
+def make_deploy_rule(injector: IDSRuleInjector, monitor: IDSMonitor):
     @tool
     def deploy_rule(rule_with_sid: str) -> str:
-        """Deploy a Snort rule to the IDS host and reload the Snort container.
+        """Deploy a Snort rule to the IDS host, reload the Snort container, and clear the alert log.
 
         Args:
             rule_with_sid: The Snort rule with a real SID already assigned.
@@ -70,6 +71,7 @@ def make_deploy_rule(injector: IDSRuleInjector):
         log_stage("AGORA ESTA INJETANDO A REGRA NO IDS")
         logger.info("Tool deploy_rule called")
         injector.inject([rule_with_sid])
+        monitor.clear_alert_log()
         logger.info("Tool deploy_rule finished")
         return "DEPLOYED"
 

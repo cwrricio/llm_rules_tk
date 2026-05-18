@@ -115,6 +115,7 @@ class RulesAgent:
     ):
         self._context = RunContext()
         self._attacker_agent = attacker_agent
+        self._injector = injector
         self._monitor = monitor
         self._recorder = recorder
         self._validated_rules_store = validated_rules_store
@@ -131,7 +132,7 @@ class RulesAgent:
             tools=[
                 make_validate_rule_syntax(validator),
                 make_assign_sid(sid_manager),
-                make_deploy_rule(injector),
+                make_deploy_rule(injector, monitor),
                 make_trigger_attacker(attacker_agent, self._context),
                 make_check_alert_fired(monitor),
                 make_record_iteration(recorder, self._context, validated_rules_store),
@@ -270,6 +271,16 @@ class RulesAgent:
             experiment_id,
             active_sid,
         )
+
+        log_stage("REINICIANDO SNORT PARA ESTADO LIMPO")
+        logger.info(
+            "run_variant_attack redeploying active rule to reset Snort state and clear alert log "
+            "variant_label=%s active_sid=%s",
+            variant_label,
+            active_sid,
+        )
+        self._injector.inject([active_rule])
+        self._monitor.clear_alert_log()
 
         history = [
             VariantResult(
