@@ -48,7 +48,13 @@ def configure_execution_logging(
     # On Windows the default stdout encoding (cp1252) can't represent Unicode block
     # characters that container progress bars emit. Wrap with errors='replace' so
     # unencodable chars become '?' instead of crashing the logging handler.
-    if hasattr(raw_stream, "buffer"):
+    #
+    # Only do this on Windows: the TextIOWrapper takes ownership of the underlying
+    # buffer and closes it when garbage-collected. Under pytest's stdout capture that
+    # buffer is the per-test capture file, so wrapping it here would close pytest's
+    # capture on reconfigure and corrupt every subsequent test's teardown. On POSIX
+    # the console handler attaches straight to the stream, which logging never closes.
+    if sys.platform == "win32" and hasattr(raw_stream, "buffer"):
         try:
             safe_stream: TextIO = io.TextIOWrapper(
                 raw_stream.buffer,

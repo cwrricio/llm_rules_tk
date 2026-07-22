@@ -110,6 +110,10 @@ def test_attacker_agent_has_expected_tools_and_skills():
         "list_available_attacks",
         "read_attack_definition",
         "execute_attack",
+        "list_attack_files",
+        "read_attack_source_file",
+        "modify_attack_file",
+        "rebuild_attack_image",
     ]
 
     skill_names = set(fresh._agent.skills.get_skill_names())

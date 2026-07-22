@@ -48,6 +48,31 @@ class FakeRulesAgent:
         )
         return self._results.pop(0)
 
+    def run_variant_attack(
+        self,
+        intent: str,
+        variant_label: str,
+        active_sid: int,
+        active_rule: str,
+        previous_attacks: list[dict],
+        experiment_id: str,
+        fixed_destination_ip: str | None = None,
+        fixed_destination_port: int | None = None,
+    ) -> IterationResult:
+        # Variant cycles reuse an already-deployed rule and skip LLM rule generation;
+        # the orchestrator routes here once the base rule has fired.
+        self.calls.append(
+            {
+                "variant_label": variant_label,
+                "previous_count": len(previous_attacks),
+                "max_internal_attempts": None,
+                "experiment_id": experiment_id,
+                "fixed_destination_ip": fixed_destination_ip,
+                "fixed_destination_port": fixed_destination_port,
+            }
+        )
+        return self._results.pop(0)
+
 
 class RaisingRulesAgent:
     def __init__(self, exc: Exception):

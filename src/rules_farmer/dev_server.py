@@ -17,6 +17,7 @@ class DevOrchestrator:
         max_iterations: int,
         variant_count: int,
         experiment_id: str | None = None,
+        convergence_threshold: int | None = None,
     ) -> ExperimentRunResult:
         experiment_id = experiment_id or str(uuid.uuid4())
         return ExperimentRunResult(

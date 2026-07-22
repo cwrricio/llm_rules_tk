@@ -9,7 +9,9 @@ class FakeOrchestrator:
     def __init__(self):
         self.calls = []
 
-    def run_experiment(self, intent, max_iterations, variant_count):
+    def run_experiment(
+        self, intent, max_iterations, variant_count, convergence_threshold=None
+    ):
         self.calls.append(
             {
                 "intent": intent,
@@ -57,7 +59,9 @@ def test_main_reads_intent_before_building_runtime():
     events = []
     orchestrator = FakeOrchestrator()
     config = SimpleNamespace(
-        experiment_defaults=SimpleNamespace(max_iterations=5, variant_count=3)
+        experiment_defaults=SimpleNamespace(
+            max_iterations=5, variant_count=3, convergence_threshold=5
+        )
     )
     runtime = SimpleNamespace(orchestrator=orchestrator)
 
@@ -85,7 +89,9 @@ def test_main_reads_intent_before_building_runtime():
 def test_main_writes_realtime_trace_to_output_log(tmp_path):
     orchestrator = FakeOrchestrator()
     config = SimpleNamespace(
-        experiment_defaults=SimpleNamespace(max_iterations=5, variant_count=3)
+        experiment_defaults=SimpleNamespace(
+            max_iterations=5, variant_count=3, convergence_threshold=5
+        )
     )
     runtime = SimpleNamespace(orchestrator=orchestrator)
     log_path = tmp_path / "output.log"

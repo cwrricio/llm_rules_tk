@@ -10,13 +10,21 @@ class FakeOrchestrator:
     def __init__(self):
         self.calls = []
 
-    def run_experiment(self, intent, max_iterations, variant_count, experiment_id=None):
+    def run_experiment(
+        self,
+        intent,
+        max_iterations,
+        variant_count,
+        experiment_id=None,
+        convergence_threshold=None,
+    ):
         self.calls.append(
             {
                 "intent": intent,
                 "max_iterations": max_iterations,
                 "variant_count": variant_count,
                 "experiment_id": experiment_id,
+                "convergence_threshold": convergence_threshold,
             }
         )
         return ExperimentRunResult(
@@ -47,6 +55,7 @@ def test_post_experiments_starts_background_run_and_get_returns_result():
             "max_iterations": 5,
             "variant_count": 3,
             "experiment_id": "exp-1",
+            "convergence_threshold": None,
         }
     ]
     assert client.get("/experiments/exp-1").json() == {

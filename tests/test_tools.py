@@ -79,10 +79,12 @@ def test_assign_sid_replaces_sid_zero_with_real_sid_via_sid_manager():
 
 def test_deploy_rule_forwards_to_injector():
     injector = MagicMock()
-    tool = make_deploy_rule(injector)
+    monitor = MagicMock()
+    tool = make_deploy_rule(injector, monitor)
 
     assert _call(tool, rule_with_sid="alert udp any any -> any any (sid:9000001;)") == "DEPLOYED"
     injector.inject.assert_called_once_with(["alert udp any any -> any any (sid:9000001;)"])
+    monitor.clear_alert_log.assert_called_once_with()
 
 
 def test_check_alert_fired_forwards_to_monitor():

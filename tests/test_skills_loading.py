@@ -15,11 +15,15 @@ from agno.skills import LocalSkills, Skills
 _SKILLS_ROOT = Path(__file__).resolve().parent.parent / "src" / "rules_farmer" / "skills"
 
 
+_REFERENCE_SKILLS_ROOT = _SKILLS_ROOT / "attacks" / "evasion-variants" / "references"
+
+
 def test_skills_root_contains_expected_categories():
     assert (_SKILLS_ROOT / "rules").is_dir()
     assert (_SKILLS_ROOT / "attacks").is_dir()
     assert (_SKILLS_ROOT / "shared").is_dir()
-    assert (_SKILLS_ROOT / "references").is_dir()
+    # Per-attack refinement playbooks live under the evasion-variants skill.
+    assert _REFERENCE_SKILLS_ROOT.is_dir()
 
 
 def test_rules_agent_loads_workflow_and_reference_skills():
@@ -27,7 +31,7 @@ def test_rules_agent_loads_workflow_and_reference_skills():
         loaders=[
             LocalSkills(str(_SKILLS_ROOT / "rules")),
             LocalSkills(str(_SKILLS_ROOT / "shared")),
-            LocalSkills(str(_SKILLS_ROOT / "references")),
+            LocalSkills(str(_REFERENCE_SKILLS_ROOT)),
         ]
     )
     names = set(skills.get_skill_names())
@@ -38,6 +42,7 @@ def test_rules_agent_loads_workflow_and_reference_skills():
         "rule-deployment",
         "alert-interpretation",
         "iteration-recording",
+        "validated-rules-library",
         "experiment-cycle",
     } <= names
     # Per-attack refinement playbooks (10 of them).
@@ -56,7 +61,7 @@ def test_rules_agent_loads_workflow_and_reference_skills():
 
 
 def test_reference_skills_expose_refinamento():
-    skills = Skills(loaders=[LocalSkills(str(_SKILLS_ROOT / "references"))])
+    skills = Skills(loaders=[LocalSkills(str(_REFERENCE_SKILLS_ROOT))])
     skill = skills.get_skill("xrce-dds-udp-dos")
     assert skill is not None
     ref_names = [r["name"] if isinstance(r, dict) else r for r in skill.references]
@@ -88,12 +93,25 @@ def test_snort_rule_generation_skill_exposes_references():
     assert "common-rule-patterns.md" in ref_names
 
 
-def test_evasion_variants_skill_exposes_reference():
+def test_evasion_variants_skill_exposes_per_attack_playbooks():
+    # The evasion-variants skill delegates to per-attack refinement playbooks
+    # shipped as nested skills under its references/ directory.
     skills = Skills(loaders=[LocalSkills(str(_SKILLS_ROOT / "attacks"))])
-    skill = skills.get_skill("evasion-variants")
-    assert skill is not None
-    ref_names = [r["name"] if isinstance(r, dict) else r for r in skill.references]
-    assert "evasion-patterns.md" in ref_names
+    assert skills.get_skill("evasion-variants") is not None
+
+    playbooks = Skills(loaders=[LocalSkills(str(_REFERENCE_SKILLS_ROOT))])
+    assert {
+        "mqtt-bruteforce",
+        "mqtt-lwt-abuse",
+        "mqtt-publisher-flood",
+        "mqtt-qos-amplification",
+        "xrce-dds-entity-flood",
+        "xrce-dds-fragment-abuse",
+        "xrce-dds-malformed-inject",
+        "xrce-dds-session-hijack",
+        "xrce-dds-time-desync",
+        "xrce-dds-udp-dos",
+    } == set(playbooks.get_skill_names())
 
 
 def test_skills_expose_three_meta_tools_to_agents():
