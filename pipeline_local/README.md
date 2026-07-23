@@ -7,7 +7,8 @@ o pipeline inteiro do Rules Farmer para **um ataque** (`xrce-dds-udp-dos`):
 intenção em linguagem natural
    → Rules Agent (LLM) gera uma regra Snort e valida a sintaxe no Snort real
    → injeta a regra e reinicia o Snort
-   → checagem de FALSO POSITIVO com tráfego benigno
+   → checagem de FALSO POSITIVO com tráfego benigno (vários perfis legítimos por protocolo;
+     é uma trava de código: o ataque só dispara se a regra ficar silenciosa em todos)
    → Attack Agent (LLM) escolhe e executa o ataque (contêiner Docker real)
    → Snort dá o feedback de detecção
    → nas variantes, o Attack Agent MUTA o código-fonte do ataque e RECONSTRÓI a imagem
@@ -95,7 +96,7 @@ A mesma trilha é gravada em `output.log` na raiz. Os banners que você verá, e
 | `AGORA O AGENTE DE REGRAS ESTA RACIOCINANDO` | o LLM do Rules Agent gera a regra | `RulesAgent attempted rule ... rule=<regra>` |
 | `validate_rule_syntax` | sintaxe checada no **Snort real** (`snort -T`) | `Snort rule validation accepted/rejected` |
 | `assign_sid` / `deploy_rule` | SID único + injeção + restart do Snort | `IDS injection finished` |
-| `AGORA ESTA GERANDO TRAFEGO BENIGNO` | checagem de **falso positivo** | `Benign traffic check done ... false_positive=<bool>` |
+| `AGORA ESTA GERANDO TRAFEGO BENIGNO` | checagem de **falso positivo** (vários perfis legítimos; reprova se qualquer um disparar). Trava de código: `trigger_attacker` recusa SID que não passou | `Benign traffic check done ... false_positive=<bool>` |
 | `AGORA O AGENTE DE ATAQUES ESTA RACIOCINANDO` | o LLM do Attack Agent planeja o ataque | `AttackerAgent run finished attack_id=... arguments=...` |
 | `EXECUTANDO O CONTAINER DE ATAQUE` → `REPRODUZINDO TRAFEGO NO SNORT` | ataque roda e o pcap é reproduzido no Snort | `container_exit_code`, pcap em `pipeline_local/.runtime/pcaps/` |
 | `VERIFICANDO ALERTAS DO IDS` | leitura do `alert_fast.txt` pelo SID | `IDS alert log checked sid=... fired=<bool>` |
