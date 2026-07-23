@@ -224,16 +224,45 @@ def _udp_frame(src_ip: str, dst_ip: str, sport: int, dport: int, payload: bytes)
     return eth + ip + udp
 
 
+def _benign_profiles(protocol: str) -> list[tuple[str, bytes]]:
+    """Several legitimate same-protocol payloads varying operation and size.
+
+    A well-designed rule (content fingerprint + ``track by_src`` rate) must stay silent
+    on all of these; a content-only-generic rule fires on at least one — which is the
+    false positive the Rules Agent must design around. Testing against a spread of
+    profiles (not one fixed packet) makes "passed the benign check" mean something.
+    """
+    if protocol == "xrce":
+        magic = b"RTPS"
+        return [
+            ("ping", magic + b"\x0b\x07\x08\x00" + bytes(8)),          # ~24 B keepalive
+            ("register", magic + b"\x01\x07\x28\x00" + bytes(40)),     # ~56 B participant reg
+            ("heartbeat", magic + b"\x07\x07\x10\x00" + bytes(16)),    # ~32 B heartbeat
+        ]
+    # MQTT-ish shapes (the local replay is UDP-framed but carries realistic bytes).
+    return [
+        ("connect", b"\x10\x00\x04MQTT" + bytes(12)),
+        ("publish", b"\x30\x11\x00\x0btest/benign" + b"hello"),
+        ("subscribe", b"\x82\x10\x00\x01\x00\x0btest/benign\x00"),
+    ]
+
+
 def _write_benign_pcap(path: Path, protocol: str, target_ip: str, port: int) -> None:
-    """A handful of legitimate, low-rate same-protocol datagrams spread over time."""
-    # RTPS ping shape (same protocol as the attack) but only a few packets, one every
-    # ~3 s — a normal client cadence, well below any DoS rate threshold.
-    magic = b"RTPS" if protocol == "xrce" else b"\x10\x00"  # RTPS / MQTT CONNECT
+    """Low-rate, same-protocol datagrams across several legitimate profiles.
+
+    Each profile sends a few packets at a normal client cadence (~3 s apart), well below
+    any DoS rate threshold, so a rate-based rule cannot fire on the rate while the varied
+    payloads still exercise content matches.
+    """
+    profiles = _benign_profiles(protocol)
     frames: list[tuple[int, int, bytes]] = []
-    for seq in range(5):
-        payload = magic + b"\x02\x01\x01\x0f" + bytes(56)  # ~64 B, benign
-        frame = _udp_frame("10.20.30.40", target_ip, 51000, port, payload)
-        frames.append((seq * 3, 0, frame))
+    ts = 0
+    for idx, (_name, payload) in enumerate(profiles):
+        sport = 51000 + idx  # distinct legitimate client per profile
+        for _ in range(3):
+            frame = _udp_frame("10.20.30.40", target_ip, sport, port, payload)
+            frames.append((ts, 0, frame))
+            ts += 3  # ~3 s between packets — normal cadence, low rate
     with path.open("wb") as f:
         f.write(struct.pack("!IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1))
         for ts_sec, ts_usec, frame in frames:
