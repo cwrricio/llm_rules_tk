@@ -207,6 +207,66 @@ curl http://localhost:8000/experiments/<uuid>
 
 ---
 
+## Pipeline completo local (avaliação com LLM real, sem testbed)
+
+Enquanto o **Teste mínimo** demonstra o *motor de detecção* de forma offline e
+determinística, esta seção deixa o avaliador **rodar e auditar visualmente o pipeline
+inteiro** — geração de regra **pelo LLM** + variações de ataque — para um ataque
+(`xrce-dds-udp-dos`), **sem o testbed de 4 entidades**. Exige apenas **Docker + uma chave
+de API de LLM**. Por usar o LLM real, é **não determinístico** (a saída varia entre
+execuções).
+
+```bash
+uv run --python 3.12 python pipeline_local/run_pipeline.py
+```
+
+O que roda de ponta a ponta (tudo com o **código de produção**: `Orchestrator`, os dois
+agentes agno, validador/injetor/monitor, executor, descoberta, recorders):
+
+```
+intenção → Rules Agent (LLM) gera regra Snort → valida sintaxe no Snort real →
+injeta e reinicia o Snort → checagem de FALSO POSITIVO (tráfego benigno) →
+Attack Agent (LLM) executa o ataque (contêiner Docker real) → feedback de detecção →
+nas variantes o Attack Agent MUTA o código-fonte e RECONSTRÓI a imagem Docker (evasão) →
+Rules Agent refina → converge/esgota → grava os dados do experimento
+```
+
+**Honestidade científica — o que é real e o que é substituído.** Todo o núcleo é o código
+de produção sem modificação, dirigindo o LLM real. Há **duas concessões locais, ambas
+documentadas**, para dispensar o testbed físico:
+
+| Camada | Testbed real | Pipeline local | Motivo |
+|---|---|---|---|
+| Transporte entre entidades | SSH/paramiko | `LocalCommandClient` (mesma interface, `docker` local) | dispensa as 4 entidades e chaves SSH |
+| Captura do IDS | Snort captura **ao vivo** | o ataque **grava um pcap** com os mesmos bytes; o Snort real o processa em *read-file* (`snort -r`) | captura ao vivo exige privilégios indisponíveis num run auto-contido |
+
+Os bytes do ataque são idênticos aos que iriam à rede — a **mutação de código** e o
+**rebuild da imagem Docker** são exercitados de verdade. O ataque **não transmite** nada
+(`--network none`), então é seguro em qualquer máquina.
+
+**Auditoria visual.** Cada etapa emite um banner `<------------- MENSAGEM ------------->`
+no terminal (e em `output.log`): descoberta de ataques, raciocínio de cada agente, regra
+gerada, validação/injeção, checagem de falso positivo, execução do ataque, replay no Snort,
+verificação de alertas, mutação de fonte + rebuild, e a convergência. Rode com `--keep`
+para inspecionar o contêiner ao final (`docker exec rules_farmer_pipeline_snort cat
+/etc/snort/rules/temp/rules_farmer_ai.rules`).
+
+**Dados gerados** (caminho impresso ao final; o avaliador tem acesso a tudo):
+
+```text
+results/<experiment_id>/
+├── experiment.json    # todas as execuções: attack_id, arguments, rule, fired, evasion_rationale, ...
+├── metrics.csv        # 1 linha por execução (iteration, execution_type, fired, rule, ...)
+├── mutations/         # snapshot do código-fonte de ataque mutado a cada variante evasiva
+└── validated_rules/   # regras que detectaram (fired=True), por família
+```
+
+Configuração (provider/modelo, `variant_count`, limiar de convergência) em
+`pipeline_local/config.pipeline.yaml`. O roteiro detalhado — tabela de auditoria por etapa,
+troca de provider, inspeção manual — está em [`pipeline_local/README.md`](pipeline_local/README.md).
+
+---
+
 ## Experimentos
 
 Esta seção reproduz o comportamento central do artigo: **a partir de uma intenção em linguagem natural, o sistema gera uma regra Snort, valida-a contra o ataque real e mede quantas iterações são necessárias até detectar o ataque base e suas variantes evasivas.** Requer o testbed completo.

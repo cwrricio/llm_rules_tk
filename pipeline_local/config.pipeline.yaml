@@ -1,0 +1,32 @@
+# Configuration for the self-contained, real-LLM full pipeline (pipeline_local/).
+#
+# Only the fields the local pipeline actually uses. Everything about the remote
+# testbed (SSH hosts, testbed paths) is irrelevant here — the harness runs against
+# local Docker and computes its own paths.
+#
+# LLM provider/model: pick the one you have a key for. Override without editing this
+# file via environment variables:
+#     RF_PROVIDER=openai RF_MODEL=gpt-4o  uv run python pipeline_local/run_pipeline.py
+# Supported providers: anthropic | openai | groq | deepseek. The matching key must be
+# in the environment or in a .env next to config.yaml (ANTHROPIC_API_KEY, OPENAI_API_KEY,
+# GROQ_API_KEY, DEEPSEEK_API_KEY).
+
+llm:
+  rule_agent:     { provider: anthropic, model: claude-sonnet-4-6, temperature: 0, max_tokens: 8192 }
+  attacker_agent: { provider: anthropic, model: claude-sonnet-4-6, temperature: 0, max_tokens: 8192 }
+
+# Small by default so a first evaluator run is quick (~5 min) and cheap: 1 base attack + 1
+# variant. Raise variant_count (e.g. 3–5) for the deeper adversarial demonstration where the
+# Attack Agent regenerates evasions and the Rules Agent refines across several rounds — that
+# run is much longer, because a strong model may spend its whole rule-regeneration budget each
+# cycle (max_iterations is guidance in the prompt, not a hard code-level cap).
+experiment_defaults:
+  max_iterations: 5          # LLM rule-regeneration budget within a single cycle (advisory)
+  variant_count: 1           # attack variations after the base (1 base + 1 variant)
+  continue_on_failure: true
+  convergence_threshold: 1   # consecutive variant detections to declare "converged"
+
+# Fixed destination per family (the agents never mutate these).
+attack_destinations:
+  mqtt: { ip: 172.17.0.2, port: 1883 }
+  xrce: { ip: 172.17.0.2, port: 8888 }

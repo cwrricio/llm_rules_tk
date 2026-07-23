@@ -15,3 +15,6 @@ output.log
 # teste mínimo (Salão de Ferramentas) — runtime artifacts written by the driver
 teste_minimo/.runtime/
 teste_minimo/snort/rules/temp/rules_farmer_ai.rules
+
+# pipeline completo local (Salão de Ferramentas) — runtime artifacts
+pipeline_local/.runtime/
