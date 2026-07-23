@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 from rules_farmer.attack_discovery import DiscoveredAttack
 from rules_farmer.attack_executor import ExecutionResult
+from rules_farmer.benign_traffic import BenignRunResult
 from rules_farmer.ids_rule_validator import ValidationResult
 from rules_farmer.schemas import AttackerResult
 from rules_farmer.sid_manager import AssignedRule
@@ -23,6 +24,7 @@ from rules_farmer.tools import (
     make_list_available_attacks,
     make_read_attack_definition,
     make_record_iteration,
+    make_run_benign_traffic,
     make_trigger_attacker,
     make_validate_rule_syntax,
 )
@@ -31,6 +33,11 @@ from rules_farmer.tools import (
 def _call(tool, **kwargs):
     """Invoke the underlying Python callable that the @tool decorator wrapped."""
     return tool.entrypoint(**kwargs)
+
+
+def _benign_ok(protocol: str = "mqtt") -> BenignRunResult:
+    """A successful benign run (exit_code 0, no stderr)."""
+    return BenignRunResult(protocol=protocol, exit_code=0, stdout="ok", stderr="")
 
 
 _MQTT = DiscoveredAttack(
@@ -208,6 +215,8 @@ def test_trigger_attacker_calls_inner_agent_and_unpacks_result():
         variant_label="base",
         fixed_destination_ip="172.17.0.2",
         fixed_destination_port=1883,
+        # SID has cleared the benign check, so the attack is allowed to run.
+        benign_validated_sids={9000001},
     )
     tool = make_trigger_attacker(attacker_agent, context)
 
@@ -229,3 +238,60 @@ def test_trigger_attacker_calls_inner_agent_and_unpacks_result():
     # The fixed destination from RunContext must flow into the AttackerRequest.
     assert request.fixed_destination_ip == "172.17.0.2"
     assert request.fixed_destination_port == 1883
+
+
+def test_trigger_attacker_refuses_sid_that_skipped_benign_check():
+    attacker_agent = MagicMock()
+    context = RunContext(
+        experiment_id="exp-1",
+        variant_label="base",
+        fixed_destination_ip="172.17.0.2",
+        fixed_destination_port=1883,
+    )  # benign_validated_sids is empty — the benign check never ran for this SID.
+    tool = make_trigger_attacker(attacker_agent, context)
+
+    result = _call(
+        tool,
+        intent="Detect MQTT",
+        rule="alert ...",
+        sid=9000001,
+        request_variant=False,
+        previous_attacks=[],
+    )
+
+    assert result["error"] == "benign_check_required"
+    # The attack agent must NOT have been invoked for an unvalidated rule.
+    attacker_agent.run.assert_not_called()
+
+
+def test_run_benign_traffic_validates_sid_on_clean_run():
+    runner = MagicMock()
+    runner.run.return_value = _benign_ok()
+    monitor = MagicMock()
+    monitor.check_fired.return_value = False  # rule stayed silent → no false positive
+    context = RunContext(experiment_id="exp-1", fixed_destination_ip="172.17.0.2")
+    tool = make_run_benign_traffic(runner, monitor, context)
+
+    result = _call(tool, protocol="mqtt", sid=9000001, duration_seconds=5.0)
+
+    assert result["false_positive"] is False
+    assert 9000001 in context.benign_validated_sids
+    monitor.clear_alert_log.assert_called_once()
+
+
+def test_run_benign_traffic_does_not_validate_sid_on_false_positive():
+    runner = MagicMock()
+    runner.run.return_value = _benign_ok()
+    monitor = MagicMock()
+    monitor.check_fired.return_value = True  # rule fired on benign traffic
+    context = RunContext(
+        experiment_id="exp-1",
+        fixed_destination_ip="172.17.0.2",
+        benign_validated_sids={9000001},  # a stale pass that must be revoked
+    )
+    tool = make_run_benign_traffic(runner, monitor, context)
+
+    result = _call(tool, protocol="mqtt", sid=9000001, duration_seconds=5.0)
+
+    assert result["false_positive"] is True
+    assert 9000001 not in context.benign_validated_sids

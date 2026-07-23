@@ -110,6 +110,15 @@ def make_run_benign_traffic(
             false_positive,
         )
 
+        # Record the verdict on the shared context so trigger_attacker can enforce it.
+        # Only a clean run (benign traffic actually ran AND the rule stayed silent)
+        # unlocks the attack. A false positive or a runner error revokes any prior pass
+        # for this SID, so a rejected rule cannot slip through on a stale validation.
+        if false_positive or error_msg:
+            context.benign_validated_sids.discard(sid)
+        else:
+            context.benign_validated_sids.add(sid)
+
         # Always clear the log so the real attack test starts clean
         monitor.clear_alert_log()
         logger.info("Alert log cleared after benign traffic check sid=%s", sid)

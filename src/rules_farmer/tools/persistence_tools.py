@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from agno.tools import tool
 
@@ -26,6 +26,13 @@ class RunContext:
     variant_label: str = "base"
     fixed_destination_ip: str | None = None
     fixed_destination_port: int | None = None
+
+    # SIDs whose deployed rule passed the mandatory benign false-positive check.
+    # Populated by run_benign_traffic; trigger_attacker refuses any SID not in here,
+    # turning the "benign check is mandatory" prompt rule into a hard code gate.
+    # SIDs are globally unique (SIDManager), so entries never collide across
+    # experiments even though this object is reused for the whole run.
+    benign_validated_sids: set[int] = field(default_factory=set)
 
 
 def make_record_iteration(

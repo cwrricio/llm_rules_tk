@@ -51,7 +51,35 @@ def make_trigger_attacker(
 
         Returns:
             {"attack_id", "arguments", "evasion_rationale", "container_exit_code", "container_stderr"}.
+            On a skipped/failed benign check it instead returns {"error": "benign_check_required", ...}
+            and does NOT run the attack — call run_benign_traffic(protocol, sid) first.
         """
+        # Hard gate: never attack with a rule that has not cleared the benign
+        # false-positive check. The prompt already forbids skipping run_benign_traffic,
+        # but relying on prompt discipline let a hallucinated flow attack an unvalidated
+        # rule. This makes the guarantee structural.
+        if sid not in context.benign_validated_sids:
+            logger.warning(
+                "trigger_attacker refused: sid=%s has not passed run_benign_traffic "
+                "(validated=%s)",
+                sid,
+                sorted(context.benign_validated_sids),
+            )
+            return {
+                "error": "benign_check_required",
+                "message": (
+                    f"Rule SID {sid} has not passed the benign false-positive check. "
+                    f"Call run_benign_traffic(protocol, sid={sid}) and only proceed if it "
+                    f"returns false_positive=False. If it returned false_positive=True, "
+                    f"discard the rule and generate a narrower one."
+                ),
+                "attack_id": None,
+                "arguments": [],
+                "evasion_rationale": "",
+                "container_exit_code": None,
+                "container_stderr": "",
+            }
+
         history = [
             VariantResult(
                 attack_id=item["attack_id"],

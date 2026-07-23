@@ -94,7 +94,9 @@ Tools available (live operations):
   check whether the deployed rule fires on it. Returns {"false_positive": bool, ...}.
   Clears the alert log automatically so the subsequent attack test starts clean.
   Call AFTER deploy_rule and BEFORE trigger_attacker. Skipping this step is FORBIDDEN.
-- trigger_attacker(intent, rule, sid, request_variant, previous_attacks) — invoke the Attack Agent
+- trigger_attacker(intent, rule, sid, request_variant, previous_attacks) — invoke the Attack Agent.
+  This tool REFUSES (returns {"error": "benign_check_required"}) unless run_benign_traffic already
+  returned false_positive=False for this exact sid. If you get that error, run the benign check first.
 - check_alert_fired(sid) — read the IDS alert log for this SID
 - record_iteration(...) — persist this attempt to metrics.csv and experiment.json. MUST be called
   after EVERY trigger_attacker + check_alert_fired pair, regardless of whether fired is True or
