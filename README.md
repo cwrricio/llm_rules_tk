@@ -15,7 +15,7 @@ Os autores solicitam a avaliação dos **quatro selos**:
 | **Disponível** | SeloD | Código-fonte público, versionado em Git, com `README.md` e **licença MIT** (arquivo [`LICENSE`](LICENSE)). |
 | **Funcional** | SeloF | O **Fluxo de avaliação** (adiante) roda o pipeline completo de ponta a ponta em Docker local: gera regra pelo LLM, valida no Snort real, injeta, checa falso positivo, executa o ataque, detecta, muta o ataque e reconstrói a imagem, e grava os dados. Como evidência complementar de robustez, o projeto traz uma suíte de **80 testes** determinísticos (`uv run --python 3.12 pytest -q`). |
 | **Sustentável** | SeloS | Arquitetura modular documentada (agentes / skills / tools separados), suíte de testes determinística, ADRs em `docs/adr/`, documentação de contexto em `CONTEXT.md` e `docs/system_overview.md`. |
-| **Reprodutível** | SeloR | O fluxo é **reproduzível por qualquer avaliador** com Docker e uma chave de API — sem hardware especial nem testbed físico. Gera artefatos inspecionáveis (`experiment.json`, `metrics.csv`, `mutations/`, `validated_rules/`). **Ressalva honesta:** o pipeline usa um LLM real, então a saída é **não determinística** — números exatos (regras, nº de iterações) variam entre execuções e **entre modelos**. O modelo usado no artigo foi o **`deepseek-v4-pro`**; modelos diferentes podem produzir resultados divergentes. |
+| **Reprodutível** | SeloR | O fluxo é **reproduzível por qualquer avaliador** com Docker e uma chave de API. Gera artefatos inspecionáveis (`experiment.json`, `metrics.csv`, `mutations/`, `validated_rules/`). **Ressalva honesta:** o pipeline usa um LLM real, então a saída é **não determinística** — números exatos (regras, nº de iterações) variam entre execuções e **entre modelos**. O modelo usado no artigo foi o **`deepseek-v4-pro`**; modelos diferentes podem produzir resultados divergentes. |
 
 ---
 
@@ -32,8 +32,6 @@ Os autores solicitam a avaliação dos **quatro selos**:
 | Framework de agentes | agno ≥ 2.2 |
 | Provedor LLM | DeepSeek (artigo) — também Anthropic / OpenAI / Groq (configurável) |
 | Hardware | Qualquer máquina capaz de rodar Docker + Python 3.12; o custo real é o das chamadas de LLM |
-
-**Tudo roda em Docker local.** O fluxo de avaliação sobe um contêiner Snort 3 isolado e roda o(s) contêiner(es) de ataque na própria máquina do avaliador — **não há mais "entidades" separadas nem acesso SSH**. (Historicamente, os experimentos do artigo usaram um testbed de múltiplas máquinas via SSH; esse acoplamento foi encapsulado atrás de uma interface e substituído por Docker local — ver *Arquitetura* e `docs/adr/0001-*`.)
 
 ---
 
@@ -56,49 +54,106 @@ Os autores solicitam a avaliação dos **quatro selos**:
 
 ---
 
-## Instalação
+## Fluxo de avaliação
+
+**Objetivo:** **auditar visualmente** o pipeline **inteiro** para um ataque (`xrce-dds-udp-dos`), do zero até **convergência** ou até **esgotar as variantes**. Siga os passos na ordem — **todos os comandos são executados a partir da raiz do repositório** (o diretório onde está `config.yaml`).
+
+### Passo 1 — instalar as dependências
 
 ```bash
 uv sync --python 3.12
 ```
 
-Se `uv` reclamar de permissão no cache: `UV_CACHE_DIR=/tmp/uv-cache uv sync --python 3.12`.
+Se `uv` reclamar de permissão no cache, use: `UV_CACHE_DIR=/tmp/uv-cache uv sync --python 3.12`.
 
----
+### Passo 2 — criar o arquivo `.env` com a sua chave de API
 
-## Fluxo de avaliação
-
-**Objetivo:** o avaliador roda e **audita visualmente** o pipeline **inteiro** para um ataque (`xrce-dds-udp-dos`), do zero até **convergência** ou até **esgotar as variantes** — em Docker local, com um LLM real.
-
-### Passo 1 — configurar a chave de API e o modelo
-
-O pipeline faz chamadas **reais** ao LLM. Escolha um provedor e informe a chave correspondente, por variável de ambiente **ou** em um `.env` ao lado de `config.yaml`:
+O pipeline faz chamadas **reais** ao LLM e lê a chave de um arquivo **`.env` na raiz do repositório** (ao lado de `config.yaml`). Crie-o a partir do modelo fornecido:
 
 ```bash
-# escolha UMA (a do provedor que você vai usar):
-export DEEPSEEK_API_KEY=sk-...        # provedor do artigo
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...
-export GROQ_API_KEY=gsk-...
+cp .env.example .env
 ```
 
-O provedor/modelo default está em [`pipeline_local/config.pipeline.yaml`](pipeline_local/config.pipeline.yaml) e pode ser trocado sem editar o arquivo, via `RF_PROVIDER` / `RF_MODEL` (ou `--provider` / `--model`):
+Agora **abra o arquivo `.env`** e cole a sua chave na linha do provedor que vai usar. Para o provedor do artigo (DeepSeek), a linha deve ficar assim:
 
 ```bash
-# modelo do artigo:
-export RF_PROVIDER=deepseek
-export RF_MODEL=deepseek-v4-pro
+DEEPSEEK_API_KEY=sk-cole-sua-chave-aqui
 ```
+
+Preencha **apenas** a linha do provedor escolhido; as demais podem ficar em branco. O `.env` **nunca** é versionado (já está no `.gitignore`).
+
+> **Atalho (sem abrir editor):** crie o `.env` já com a chave em um único comando — troque `sk-cole-sua-chave-aqui` pela sua chave real:
+>
+> ```bash
+> printf 'DEEPSEEK_API_KEY=%s\n' 'sk-cole-sua-chave-aqui' > .env
+> ```
+
+Mapa **provedor → variável** que você preenche no `.env`:
+
+| Provedor | Variável no `.env` |
+|---|---|
+| DeepSeek (artigo) | `DEEPSEEK_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+
+### Passo 3 — (opcional) escolher outro provedor / modelo
+
+O **default já é o do artigo**: provedor `deepseek`, modelo **`deepseek-v4-pro`** (definido em `pipeline_local/config.pipeline.yaml`). Se for usar esse, **pule este passo**.
+
+Para usar outro provedor/modelo, há duas formas:
+
+- **Sem editar arquivo** — defina variáveis de ambiente antes de rodar (Passo 5):
+
+  ```bash
+  export RF_PROVIDER=openai      # anthropic | openai | groq | deepseek
+  export RF_MODEL=gpt-4o         # id do modelo no provedor escolhido
+  ```
+
+- **Editando o arquivo** — abra `pipeline_local/config.pipeline.yaml` e altere as **duas linhas** do bloco `llm` (`rule_agent` e `attacker_agent`):
+
+  ```yaml
+  llm:
+    rule_agent:     { provider: openai, model: gpt-4o, temperature: 0, max_tokens: 8192 }
+    attacker_agent: { provider: openai, model: gpt-4o, temperature: 0, max_tokens: 8192 }
+  ```
+
+  Em qualquer das formas, preencha no `.env` (Passo 2) a variável de chave do provedor escolhido.
 
 > ⚠️ **O modelo importa.** O artigo usou **`deepseek-v4-pro`**. Como o pipeline é dirigido por um LLM real, **modelos diferentes (ou execuções diferentes do mesmo modelo) podem divergir** — na regra gerada, no número de iterações até detectar, e em quais variantes escapam. Modelos fracos podem gerar regras ruins ou não seguir o protocolo de ferramentas. Isso é esperado e faz parte da natureza da ferramenta.
 
-### Passo 2 — rodar o pipeline
+### Passo 4 — (opcional) ajustar a profundidade do teste
+
+Por padrão o teste roda **1 ataque base + 1 variante** (execução rápida). Para uma demonstração adversarial mais longa, aumente o número de variações — **sem editar arquivo**, passando `--variant-count N` no Passo 5, **ou** editando o campo `variant_count` em `pipeline_local/config.pipeline.yaml`:
+
+```yaml
+experiment_defaults:
+  max_iterations: 5          # nº de regras que o LLM pode tentar por ciclo
+  variant_count: 3           # variações do ataque após o base (aumente para um teste mais longo)
+  convergence_threshold: 2   # detecções consecutivas para declarar "converged"
+```
+
+### Passo 5 — rodar o pipeline
 
 ```bash
 uv run --python 3.12 python pipeline_local/run_pipeline.py
 ```
 
-Opções úteis: `--variant-count N` (mais variantes → demonstração adversarial mais longa), `--keep` (mantém o contêiner Snort de pé ao final para inspeção). Se faltar a chave do provedor escolhido, o script **para com uma mensagem clara** dizendo qual variável definir.
+Variações úteis do comando:
+
+```bash
+# mais variantes (teste adversarial mais longo):
+uv run --python 3.12 python pipeline_local/run_pipeline.py --variant-count 3
+
+# manter o contêiner Snort de pé ao final, para inspeção manual (ver "Auditoria visual"):
+uv run --python 3.12 python pipeline_local/run_pipeline.py --keep
+
+# forçar provedor/modelo sem editar arquivos:
+RF_PROVIDER=deepseek RF_MODEL=deepseek-v4-pro \
+  uv run --python 3.12 python pipeline_local/run_pipeline.py
+```
+
+Se faltar a chave do provedor escolhido, o script **para com uma mensagem clara** dizendo qual variável definir. A **primeira execução** baixa a imagem base do Snort 3 (~1.8 GB); as seguintes reaproveitam. Ao final, o script imprime o **status** (`converged`/`partial`) e o **caminho dos dados gerados** (Passo 6).
 
 ### O que roda de ponta a ponta
 
@@ -115,16 +170,7 @@ grava os dados do experimento
 
 Uma execução termina quando: o nº de variantes consecutivas detectadas atinge `convergence_threshold` (**status `converged`**), ou o `variant_count` se esgota (**status `partial`**, quando alguma variante escapou). Ambos são resultados válidos — evasão bem-sucedida é um achado científico legítimo (ver `docs/analise_convergencia.md`).
 
-### Honestidade científica — o que é real e o que é substituído
-
-Todo o núcleo é o código de produção sem modificação, dirigindo o LLM real. Há **duas concessões locais, ambas documentadas**, para dispensar o testbed físico:
-
-| Camada | Testbed original | Fluxo local | Motivo |
-|---|---|---|---|
-| Transporte para as máquinas | SSH/paramiko (`SSHClient`) | `LocalCommandClient` (mesma interface, roda `docker` local) | dispensa múltiplas máquinas e chaves SSH |
-| Captura do IDS | Snort captura **ao vivo** | o ataque **grava um pcap** com os mesmos bytes; o Snort real o processa em *read-file* (`snort -r`) | captura ao vivo exige privilégios indisponíveis num run auto-contido |
-
-Os bytes do ataque são **idênticos** aos que iriam à rede — a mutação de código e o rebuild da imagem são exercitados de verdade.
+---
 
 ### Auditoria visual
 
@@ -135,9 +181,9 @@ docker exec rules_farmer_pipeline_snort cat /etc/snort/rules/temp/rules_farmer_a
 cat pipeline_local/.runtime/logs/alert_fast.txt                                            # alertas do Snort
 ```
 
-### Dados gerados (o avaliador tem acesso a tudo)
+### Passo 6 — inspecionar os dados gerados
 
-O caminho é impresso ao final. Em `results/<experiment_id>/`:
+O caminho é impresso ao final da execução. O avaliador tem acesso a tudo em `results/<experiment_id>/`:
 
 ```text
 results/<experiment_id>/
@@ -213,12 +259,6 @@ pipeline_local/              Fluxo de avaliação (Docker local, LLM real) — v
 
 ---
 
-## Decisões de arquitetura
-
-- `docs/adr/0001-rest-communication-between-entities.md` — Por que a comunicação com as máquinas ficou atrás de uma interface (hoje satisfeita por Docker local).
-- `docs/adr/0002-attack-skills-architecture.md` — Por que descoberta dinâmica de ataques em vez de lista fixa.
-
----
 
 ## Licença
 

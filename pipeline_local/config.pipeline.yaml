@@ -12,8 +12,8 @@
 # GROQ_API_KEY, DEEPSEEK_API_KEY).
 
 llm:
-  rule_agent:     { provider: anthropic, model: claude-sonnet-4-6, temperature: 0, max_tokens: 8192 }
-  attacker_agent: { provider: anthropic, model: claude-sonnet-4-6, temperature: 0, max_tokens: 8192 }
+  rule_agent:     { provider: deepseek, model: deepseek-v4-pro, temperature: 0, max_tokens: 8192 }
+  attacker_agent: { provider: deepseek, model: deepseek-v4-pro, temperature: 0, max_tokens: 8192 }
 
 # Small by default so a first evaluator run is quick (~5 min) and cheap: 1 base attack + 1
 # variant. Raise variant_count (e.g. 3–5) for the deeper adversarial demonstration where the

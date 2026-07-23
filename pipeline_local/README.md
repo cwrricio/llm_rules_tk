@@ -43,18 +43,22 @@ qualquer máquina.
 ## Requisitos
 
 - **Docker** (baixa a imagem base do Snort 3, `ciscotalos/snort3`, ~1.8 GB na 1ª vez).
-- **Uma chave de API de LLM.** Providers suportados: `anthropic`, `openai`, `groq`,
-  `deepseek`. Coloque a chave no ambiente ou num `.env` ao lado de `config.yaml`:
+- **Uma chave de API de LLM.** Providers suportados: `deepseek` (artigo), `anthropic`,
+  `openai`, `groq`. Crie um `.env` na raiz do repositório (ao lado de `config.yaml`) —
+  `cp .env.example .env` — e preencha a linha do provedor escolhido:
 
   ```bash
   # .env (na raiz do repositório — nunca versionado)
-  ANTHROPIC_API_KEY=sk-...
+  DEEPSEEK_API_KEY=sk-...
   ```
+
+O passo a passo completo (instalação, `.env`, escolha de modelo) está no
+[`README.md`](../README.md) principal, seção **Fluxo de avaliação**.
 
 ## Como rodar
 
 ```bash
-# provider/modelo default estão em pipeline_local/config.pipeline.yaml (anthropic).
+# default = provedor/modelo do artigo (deepseek / deepseek-v4-pro), em config.pipeline.yaml.
 uv run --python 3.12 python pipeline_local/run_pipeline.py
 
 # trocar de provider/modelo sem editar o yaml:
