@@ -131,8 +131,7 @@ pipeline_local/
 ├── local_harness.py           # LocalAttackExecutor (ataque + replay) e LocalBenignTrafficRunner
 ├── local_command_client.py    # LocalCommandClient (substituto local do SSHClient)
 ├── config.pipeline.yaml       # provider/modelo do LLM + variant_count/convergência + destinos
+├── snort/                      # imagem fina + snort.lua + rules/ do contêiner Snort local
 └── attacks/
     └── xrce-dds-udp-dos/       # ataque REAL e mutável (Dockerfile, entrypoint.sh, fonte, README)
 ```
-
-O contêiner e a configuração do Snort são reaproveitados de `teste_minimo/snort/`.

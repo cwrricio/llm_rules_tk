@@ -18,3 +18,4 @@ teste_minimo/snort/rules/temp/rules_farmer_ai.rules
 
 # pipeline completo local (Salão de Ferramentas) — runtime artifacts
 pipeline_local/.runtime/
+pipeline_local/snort/rules/temp/rules_farmer_ai.rules

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -35,15 +36,16 @@ from rules_farmer.execution_logging import configure_execution_logging, log_stag
 from pipeline_local.build_runtime import build_local_runtime  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-SNORT_CFG_DIR = REPO_ROOT / "teste_minimo" / "snort"     # reuse the teste mínimo Snort image/config
+SNORT_CFG_DIR = HERE / "snort"                            # self-contained Snort image/config
 RUNTIME_DIR = HERE / ".runtime"
 LOG_DIR = RUNTIME_DIR / "logs"
 PCAP_DIR = RUNTIME_DIR / "pcaps"
-ATTACKS_ROOT = HERE / "attacks"
+ATTACKS_SRC = HERE / "attacks"              # versioned, pristine attack sources
+RUNTIME_ATTACKS = RUNTIME_DIR / "attacks"   # throwaway copy the Attack Agent mutates in place
 RESULTS_DIR = REPO_ROOT / "results"
 CONFIG_PATH = HERE / "config.pipeline.yaml"
 
-SNORT_IMAGE = "rules-farmer-snort-min:latest"
+SNORT_IMAGE = "rules-farmer-pipeline-snort:latest"
 SNORT_CONTAINER = "rules_farmer_pipeline_snort"
 ATTACK_IMAGE = "iotedu-attack-xrce-dds-udp-dos:latest"
 
@@ -67,10 +69,17 @@ def _sh(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
 
 
 def setup() -> None:
+    # Work on a throwaway copy of the attack sources so the Attack Agent's in-place
+    # mutations (modify_attack_file + rebuild) never dirty the versioned tree.
+    if RUNTIME_ATTACKS.exists():
+        shutil.rmtree(RUNTIME_ATTACKS)
+    shutil.copytree(ATTACKS_SRC, RUNTIME_ATTACKS,
+                    ignore=shutil.ignore_patterns("__pycache__"))
+
     log_stage("BUILD DA IMAGEM DO SNORT")
     _sh(["docker", "build", "-q", "-t", SNORT_IMAGE, str(SNORT_CFG_DIR)])
     log_stage("BUILD DA IMAGEM DO ATAQUE")
-    _sh(["docker", "build", "-q", "-t", ATTACK_IMAGE, str(ATTACKS_ROOT / "xrce-dds-udp-dos")])
+    _sh(["docker", "build", "-q", "-t", ATTACK_IMAGE, str(RUNTIME_ATTACKS / "xrce-dds-udp-dos")])
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.chmod(0o777)
@@ -163,7 +172,7 @@ def main() -> int:
             snort_cfg_dir=SNORT_CFG_DIR,
             log_dir=LOG_DIR,
             pcap_dir=PCAP_DIR,
-            attacks_root=ATTACKS_ROOT,
+            attacks_root=RUNTIME_ATTACKS,
             runtime_dir=RUNTIME_DIR,
             results_dir=RESULTS_DIR,
             continue_on_failure=defaults.get("continue_on_failure", True),

