@@ -57,16 +57,23 @@ O passo a passo completo (instalação, `.env`, escolha de modelo) está no
 
 ## Como rodar
 
+Entrypoints recomendados (a partir da raiz do repo) — os dois perfis de escala:
+
+```bash
+./scripts/teste_minimo.sh     # 1 base + 1 variante (rápido)
+./scripts/teste_completo.sh   # 1 base + 49 variantes, convergência 20 (escala do artigo — demora)
+```
+
+Ou chame o pipeline direto, para controle fino:
+
 ```bash
 # default = provedor/modelo do artigo (deepseek / deepseek-v4-pro), em config.pipeline.yaml.
-uv run --python 3.12 python pipeline_local/run_pipeline.py
+uv run --python 3.12 python pipeline_local/run_pipeline.py \
+  --variant-count 5 --convergence-threshold 3 --max-iterations 8
 
 # trocar de provider/modelo sem editar o yaml:
 RF_PROVIDER=openai RF_MODEL=gpt-4o \
   uv run --python 3.12 python pipeline_local/run_pipeline.py
-
-# variar a intensidade (nº de variações após o ataque base):
-uv run --python 3.12 python pipeline_local/run_pipeline.py --variant-count 5
 
 # manter o contêiner Snort de pé ao final, para inspeção manual:
 uv run --python 3.12 python pipeline_local/run_pipeline.py --keep

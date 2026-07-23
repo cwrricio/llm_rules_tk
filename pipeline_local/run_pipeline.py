@@ -121,6 +121,10 @@ def main() -> int:
         default="Detect XRCE-DDS UDP DoS flood against the XRCE-DDS Agent on 172.17.0.2 port 8888",
     )
     parser.add_argument("--variant-count", type=int, default=None, help="override variant_count")
+    parser.add_argument("--convergence-threshold", type=int, default=None,
+                        help="override convergence_threshold (consecutive variant detections)")
+    parser.add_argument("--max-iterations", type=int, default=None,
+                        help="override max_iterations (rule-regeneration budget per cycle)")
     parser.add_argument("--provider", default=os.environ.get("RF_PROVIDER"))
     parser.add_argument("--model", default=os.environ.get("RF_MODEL"))
     parser.add_argument("--keep", action="store_true", help="keep the Snort container after the run")
@@ -140,6 +144,10 @@ def main() -> int:
     defaults = raw["experiment_defaults"]
     destinations = AttackDestinationsConfig(**raw["attack_destinations"])
     variant_count = args.variant_count if args.variant_count is not None else defaults["variant_count"]
+    convergence_threshold = (args.convergence_threshold if args.convergence_threshold is not None
+                             else defaults["convergence_threshold"])
+    max_iterations = (args.max_iterations if args.max_iterations is not None
+                      else defaults["max_iterations"])
 
     key_env = _KEY_ENV.get(rule_cfg.provider.lower())
     if not key_env or not os.environ.get(key_env):
@@ -158,8 +166,8 @@ def main() -> int:
     print("=" * 74)
     print(f"  intent        : {args.intent}")
     print(f"  provider/model: {rule_cfg.provider} / {rule_cfg.model}")
-    print(f"  base+variantes: 1 + {variant_count}   (max_iterations={defaults['max_iterations']}, "
-          f"convergence={defaults['convergence_threshold']})")
+    print(f"  base+variantes: 1 + {variant_count}   (max_iterations={max_iterations}, "
+          f"convergence={convergence_threshold})")
     print("=" * 74 + "\n")
 
     setup()
@@ -179,9 +187,9 @@ def main() -> int:
         )
         result = runtime.orchestrator.run_experiment(
             intent=args.intent,
-            max_iterations=defaults["max_iterations"],
+            max_iterations=max_iterations,
             variant_count=variant_count,
-            convergence_threshold=defaults["convergence_threshold"],
+            convergence_threshold=convergence_threshold,
         )
     finally:
         if args.keep:

@@ -58,7 +58,16 @@ Os autores solicitam a avaliação dos **quatro selos**:
 
 **Objetivo:** **auditar visualmente** o pipeline **inteiro** para um ataque (`xrce-dds-udp-dos`), do zero até **convergência** ou até **esgotar as variantes**. Siga os passos na ordem — **todos os comandos são executados a partir da raiz do repositório** (o diretório onde está `config.yaml`).
 
-### Passo 1 — instalar as dependências
+### Passo 1 — clonar o repositório e entrar na pasta
+
+```bash
+git clone https://github.com/cwrricio/llm_rules_tk.git
+cd llm_rules_tk
+```
+
+**Todos os comandos seguintes são executados de dentro dessa pasta** (a raiz do repositório, onde está `config.yaml`).
+
+### Passo 2 — instalar as dependências
 
 ```bash
 uv sync --python 3.12
@@ -66,7 +75,7 @@ uv sync --python 3.12
 
 Se `uv` reclamar de permissão no cache, use: `UV_CACHE_DIR=/tmp/uv-cache uv sync --python 3.12`.
 
-### Passo 2 — criar o arquivo `.env` com a sua chave de API
+### Passo 3 — criar o arquivo `.env` com a sua chave de API
 
 O pipeline faz chamadas **reais** ao LLM e lê a chave de um arquivo **`.env` na raiz do repositório** (ao lado de `config.yaml`). Crie-o a partir do modelo fornecido:
 
@@ -97,7 +106,7 @@ Mapa **provedor → variável** que você preenche no `.env`:
 | OpenAI | `OPENAI_API_KEY` |
 | Groq | `GROQ_API_KEY` |
 
-### Passo 3 — (opcional) escolher outro provedor / modelo
+### Passo 4 — (opcional) escolher outro provedor / modelo
 
 O **default já é o do artigo**: provedor `deepseek`, modelo **`deepseek-v4-pro`** (definido em `pipeline_local/config.pipeline.yaml`). Se for usar esse, **pule este passo**.
 
@@ -118,42 +127,44 @@ Para usar outro provedor/modelo, há duas formas:
     attacker_agent: { provider: openai, model: gpt-4o, temperature: 0, max_tokens: 8192 }
   ```
 
-  Em qualquer das formas, preencha no `.env` (Passo 2) a variável de chave do provedor escolhido.
+  Em qualquer das formas, preencha no `.env` (Passo 3) a variável de chave do provedor escolhido.
 
 > ⚠️ **O modelo importa.** O artigo usou **`deepseek-v4-pro`**. Como o pipeline é dirigido por um LLM real, **modelos diferentes (ou execuções diferentes do mesmo modelo) podem divergir** — na regra gerada, no número de iterações até detectar, e em quais variantes escapam. Modelos fracos podem gerar regras ruins ou não seguir o protocolo de ferramentas. Isso é esperado e faz parte da natureza da ferramenta.
 
-### Passo 4 — (opcional) ajustar a profundidade do teste
+### Passo 5 — rodar o teste
 
-Por padrão o teste roda **1 ataque base + 1 variante** (execução rápida). Para uma demonstração adversarial mais longa, aumente o número de variações — **sem editar arquivo**, passando `--variant-count N` no Passo 5, **ou** editando o campo `variant_count` em `pipeline_local/config.pipeline.yaml`:
+Há **dois testes**, ambos rodando o **mesmo pipeline** de ponta a ponta para o ataque `xrce-dds-udp-dos`. A única diferença é a **escala** (quantas variantes de evasão e o limiar de convergência):
 
-```yaml
-experiment_defaults:
-  max_iterations: 5          # nº de regras que o LLM pode tentar por ciclo
-  variant_count: 3           # variações do ataque após o base (aumente para um teste mais longo)
-  convergence_threshold: 2   # detecções consecutivas para declarar "converged"
-```
-
-### Passo 5 — rodar o pipeline
-
-```bash
-uv run --python 3.12 python pipeline_local/run_pipeline.py
-```
-
-Variações úteis do comando:
+| | **Teste mínimo** | **Teste completo** (config. do artigo) |
+|---|---|---|
+| Comando | `./scripts/teste_minimo.sh` | `./scripts/teste_completo.sh` |
+| Execuções | 1 base + **1 variante** | 1 base + **49 variantes** = 50 |
+| Convergência | 1 detecção | **20 detecções consecutivas** |
+| Regeneração de regra / ciclo | até 5 | até 10 |
+| Duração | rápida (~minutos) | **longa** (muitas chamadas ao LLM, custo proporcional) |
+| Para quê | verificação e auditoria rápidas | reproduzir a escala do artigo |
 
 ```bash
-# mais variantes (teste adversarial mais longo):
-uv run --python 3.12 python pipeline_local/run_pipeline.py --variant-count 3
+# verificação rápida (recomendado para uma primeira avaliação):
+./scripts/teste_minimo.sh
 
-# manter o contêiner Snort de pé ao final, para inspeção manual (ver "Auditoria visual"):
-uv run --python 3.12 python pipeline_local/run_pipeline.py --keep
+# reprodução na escala do artigo (50 execuções, convergência 20) — DEMORA:
+./scripts/teste_completo.sh
+```
 
-# forçar provedor/modelo sem editar arquivos:
-RF_PROVIDER=deepseek RF_MODEL=deepseek-v4-pro \
-  uv run --python 3.12 python pipeline_local/run_pipeline.py
+Ambos os scripts repassam opções extras ao pipeline:
+
+```bash
+./scripts/teste_minimo.sh --keep                              # mantém o Snort de pé (ver "Auditoria visual")
+RF_PROVIDER=openai RF_MODEL=gpt-4o ./scripts/teste_minimo.sh  # forçar provedor/modelo nesta execução
 ```
 
 Se faltar a chave do provedor escolhido, o script **para com uma mensagem clara** dizendo qual variável definir. A **primeira execução** baixa a imagem base do Snort 3 (~1.8 GB); as seguintes reaproveitam. Ao final, o script imprime o **status** (`converged`/`partial`) e o **caminho dos dados gerados** (Passo 6).
+
+> Os scripts são atalhos finos sobre `pipeline_local/run_pipeline.py`:
+> `teste_minimo.sh` → `--variant-count 1 --convergence-threshold 1`;
+> `teste_completo.sh` → `--variant-count 49 --convergence-threshold 20 --max-iterations 10`.
+> Para uma escala intermediária, chame `run_pipeline.py` direto com os seus próprios valores.
 
 ### O que roda de ponta a ponta
 
@@ -201,7 +212,7 @@ results/<experiment_id>/
 
 ### Configuração
 
-Em [`pipeline_local/config.pipeline.yaml`](pipeline_local/config.pipeline.yaml): provedor/modelo do LLM, `variant_count` (variações após o base), `max_iterations` (orçamento de regeneração de regra por ciclo) e `convergence_threshold`. O default é um run rápido (base + 1 variante); aumente `variant_count` para a demonstração adversarial mais longa. Roteiro detalhado — tabela de auditoria por etapa, inspeção manual — em [`pipeline_local/README.md`](pipeline_local/README.md).
+Os dois testes do Passo 5 já encapsulam os dois perfis de escala. Para uma escala customizada, os parâmetros ficam em [`pipeline_local/config.pipeline.yaml`](pipeline_local/config.pipeline.yaml): provedor/modelo do LLM, `variant_count` (variações após o base), `max_iterations` (orçamento de regeneração de regra por ciclo) e `convergence_threshold` — todos sobrescrevíveis por flags (`--variant-count`, `--max-iterations`, `--convergence-threshold`). Roteiro detalhado — tabela de auditoria por etapa, inspeção manual — em [`pipeline_local/README.md`](pipeline_local/README.md).
 
 ---
 
